@@ -25,6 +25,7 @@ uses: Dispatcharr/repo-bot/actions/template-enforcer@v1
 | `enforcement` | no | `close` | What to do with non-compliant items: `close`, `lock`, `close-and-lock`, `comment-only` |
 | `lock-reason` | no | `off-topic` | Lock reason when enforcement includes `lock`: `off-topic`, `too heated`, `resolved`, `spam` |
 | `close-comment` | no | built-in message | Comment posted on non-compliant items; `{new-issue-url}` is replaced with the repo's template chooser URL |
+| `bypass-for-members` | no | `false` | If `true`, skip enforcement when the item author is a repository collaborator |
 
 #### Usage
 
@@ -102,6 +103,7 @@ uses: Dispatcharr/repo-bot/actions/comment-collapse@v1
 | `github-token` | yes | | Bot installation token with Issues read/write permission |
 | `reason` | no | `OUTDATED` | Minimize classifier: `OUTDATED`, `RESOLVED`, `DUPLICATE`, `OFF_TOPIC`, `SPAM`, `ABUSE` |
 | `filter-login` | no | `''` | Only collapse comments by this login. If blank, collapses all comments where `user.type` is `Bot`. |
+| `bypass-for-members` | no | `false` | If `true`, skip collapsing when the item author is a repository collaborator |
 
 #### Usage
 
@@ -140,6 +142,7 @@ uses: Dispatcharr/repo-bot/actions/branch-guard@v1
 | `enforcement` | no | `comment-only` | What to do when the check fails: `close`, `lock`, `close-and-lock`, `comment-only` |
 | `lock-reason` | no | `off-topic` | Lock reason when enforcement includes `lock`: `off-topic`, `too heated`, `resolved`, `spam` |
 | `comment` | no | built-in message | Comment to post on failure; `{target-branch}` is replaced with the actual base branch name |
+| `bypass-for-members` | no | `false` | If `true`, skip enforcement when the PR author is a repository collaborator |
 
 #### Usage
 

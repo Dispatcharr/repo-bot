@@ -10,6 +10,20 @@ type LockReason = typeof VALID_LOCK_REASONS[number]
 const DEFAULT_COMMENT =
   'This pull request targets `{target-branch}`, which is not an allowed target branch. Please retarget your PR to an allowed branch.'
 
+async function isCollaborator(
+  octokit: ReturnType<typeof github.getOctokit>,
+  owner: string,
+  repoName: string,
+  username: string,
+): Promise<boolean> {
+  try {
+    await octokit.rest.repos.checkCollaborator({ owner, repo: repoName, username })
+    return true
+  } catch {
+    return false
+  }
+}
+
 function matchesPattern(branch: string, pattern: string): boolean {
   const regex = new RegExp(
     '^' +
@@ -58,6 +72,7 @@ async function run(): Promise<void> {
   const enforcementInput = (core.getInput('enforcement') || 'comment-only') as Enforcement
   const lockReasonInput = (core.getInput('lock-reason') || 'off-topic') as LockReason
   const commentTemplate = core.getInput('comment') || DEFAULT_COMMENT
+  const bypassForMembers = core.getBooleanInput('bypass-for-members')
 
   if (!VALID_ENFORCEMENTS.includes(enforcementInput)) {
     core.setFailed(`Invalid enforcement: "${enforcementInput}". Must be one of: ${VALID_ENFORCEMENTS.join(', ')}`)
@@ -85,6 +100,16 @@ async function run(): Promise<void> {
   const pr = payload.pull_request!
   const targetBranch = pr.base.ref as string
   const prNumber = pr.number as number
+  const octokit = github.getOctokit(token)
+  const { owner, repo: repoName } = repo
+
+  if (bypassForMembers) {
+    const author = pr.user?.login as string | undefined
+    if (author && await isCollaborator(octokit, owner, repoName, author)) {
+      core.info(`Bypassing enforcement: ${author} is a repository collaborator`)
+      return
+    }
+  }
 
   const patterns = allowedTargetsInput.split(',').map(p => p.trim()).filter(Boolean)
   const allowed = patterns.some(p => matchesPattern(targetBranch, p))
@@ -96,8 +121,6 @@ async function run(): Promise<void> {
 
   core.info(`PR #${prNumber} targets "${targetBranch}" - not in allowed patterns: ${patterns.join(', ')}`)
 
-  const octokit = github.getOctokit(token)
-  const { owner, repo: repoName } = repo
   const comment = commentTemplate.replace(/\{target-branch\}/g, targetBranch)
 
   await enforce(octokit, owner, repoName, prNumber, enforcementInput, lockReasonInput, comment)

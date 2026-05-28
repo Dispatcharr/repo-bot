@@ -8,6 +8,10 @@ inputs:
     description: 'Minimize classifier: OUTDATED, RESOLVED, DUPLICATE, OFF_TOPIC, SPAM, ABUSE'
     required: false
     default: 'OUTDATED'
+  bypass-for-members:
+    description: 'If true, skip collapsing when the item author is a repository collaborator'
+    required: false
+    default: 'false'
   filter-login:
     description: 'Only collapse comments by this login. If blank, collapses all comments where user.type is Bot.'
     required: false

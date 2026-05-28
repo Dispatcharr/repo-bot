@@ -14,10 +14,25 @@ const MINIMIZE_MUTATION = `
   }
 `
 
+async function isCollaborator(
+  octokit: ReturnType<typeof github.getOctokit>,
+  owner: string,
+  repoName: string,
+  username: string,
+): Promise<boolean> {
+  try {
+    await octokit.rest.repos.checkCollaborator({ owner, repo: repoName, username })
+    return true
+  } catch {
+    return false
+  }
+}
+
 async function run(): Promise<void> {
   const token = core.getInput('github-token', { required: true })
   const reasonInput = (core.getInput('reason') || 'OUTDATED').toUpperCase() as Reason
   const filterLogin = core.getInput('filter-login')
+  const bypassForMembers = core.getBooleanInput('bypass-for-members')
 
   if (!VALID_REASONS.includes(reasonInput)) {
     core.setFailed(`Invalid reason: "${reasonInput}". Must be one of: ${VALID_REASONS.join(', ')}`)
@@ -34,6 +49,14 @@ async function run(): Promise<void> {
 
   const octokit = github.getOctokit(token)
   const { owner, repo: repoName } = repo
+
+  if (bypassForMembers) {
+    const author = (payload.issue?.user?.login ?? payload.pull_request?.user?.login) as string | undefined
+    if (author && await isCollaborator(octokit, owner, repoName, author)) {
+      core.info(`Bypassing collapse: ${author} is a repository collaborator`)
+      return
+    }
+  }
 
   const { data: comments } = await octokit.rest.issues.listComments({
     owner,

@@ -35,6 +35,10 @@ inputs:
     description: 'Reason used when locking (off-topic, too heated, resolved, spam). Only applies when enforcement includes lock.'
     required: false
     default: 'off-topic'
+  bypass-for-members:
+    description: 'If true, skip enforcement when the item author is a repository collaborator'
+    required: false
+    default: 'false'
   close-comment:
     description: >
       Comment posted on a non-compliant item.

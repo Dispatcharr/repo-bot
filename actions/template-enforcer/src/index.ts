@@ -16,6 +16,20 @@ interface CheckResult {
   detail: string
 }
 
+async function isCollaborator(
+  octokit: ReturnType<typeof github.getOctokit>,
+  owner: string,
+  repoName: string,
+  username: string,
+): Promise<boolean> {
+  try {
+    await octokit.rest.repos.checkCollaborator({ owner, repo: repoName, username })
+    return true
+  } catch {
+    return false
+  }
+}
+
 function checkMarkers(body: string, markers: string[]): CheckResult {
   const missing = markers.filter(m => !body.includes(m))
   return {
@@ -96,6 +110,7 @@ async function run(): Promise<void> {
   const eventTypeInput = core.getInput('event-type') || 'any'
   const enforcementInput = (core.getInput('enforcement') || 'close') as Enforcement
   const lockReasonInput = (core.getInput('lock-reason') || 'off-topic') as LockReason
+  const bypassForMembers = core.getBooleanInput('bypass-for-members')
 
   if (!VALID_EVENT_TYPES.includes(eventTypeInput as typeof VALID_EVENT_TYPES[number])) {
     core.setFailed(`Invalid event-type: "${eventTypeInput}". Must be one of: ${VALID_EVENT_TYPES.join(', ')}`)
@@ -140,6 +155,17 @@ async function run(): Promise<void> {
   }
 
   const item = isPR ? payload.pull_request! : payload.issue!
+  const octokit = github.getOctokit(token)
+  const { owner, repo: repoName } = repo
+
+  if (bypassForMembers) {
+    const author = item.user?.login as string | undefined
+    if (author && await isCollaborator(octokit, owner, repoName, author)) {
+      core.info(`Bypassing enforcement: ${author} is a repository collaborator`)
+      return
+    }
+  }
+
   const body = item.body ?? ''
   const itemLabels: string[] = (item.labels ?? []).map((l: { name: string }) => l.name)
   const itemType: string | null = (item as any).type?.name ?? null
@@ -170,8 +196,6 @@ async function run(): Promise<void> {
   const failed = checks.filter(c => !c.passed)
   core.info(`#${item.number} failed (match=${matchInput}): ${failed.map(c => `${c.name}: ${c.detail}`).join(', ')}`)
 
-  const octokit = github.getOctokit(token)
-  const { owner, repo: repoName } = repo
   const number = item.number as number
   const itemLabel = isPR ? 'pull request' : 'issue'
   const newIssueUrl = `https://github.com/${owner}/${repoName}/issues/new/choose`

@@ -15,6 +15,10 @@ inputs:
     description: 'Reason used when locking (off-topic, too heated, resolved, spam). Only applies when enforcement includes lock.'
     required: false
     default: 'off-topic'
+  bypass-for-members:
+    description: 'If true, skip enforcement when the PR author is a repository collaborator'
+    required: false
+    default: 'false'
   comment:
     description: 'Comment to post when the check fails. {target-branch} is replaced with the actual base branch name.'
     required: false
