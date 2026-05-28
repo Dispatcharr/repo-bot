@@ -18,7 +18,7 @@ uses: Dispatcharr/repo-bot/actions/template-enforcer@v1
 |-------|----------|---------|-------------|
 | `github-token` | yes | | Installation token for the bot GitHub App |
 | `event-type` | no | `any` | Limit this job to one event type: `issue`, `pull_request`, or `any` |
-| `required-markers` | no | `''` | Comma-separated strings that must all appear in the body |
+| `required-markers` | no | `''` | Comma-separated strings that must all appear in the body. Case-sensitive and matched exactly, so values must appear in the body exactly as written here. |
 | `required-labels` | no | `''` | Comma-separated label names that must all be present |
 | `required-type` | no | `''` | Comma-separated type names; item type must match one of them |
 | `match` | no | `all` | How to combine checks: `all` (every configured check must pass) or `any` (at least one must pass) |
