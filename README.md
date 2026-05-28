@@ -85,6 +85,90 @@ To override the default comment, use the `close-comment` input. `{new-issue-url}
             Issues opened without a template are closed automatically.
 ```
 
+---
+
+### comment-collapse
+
+Minimizes (collapses) bot comments on an issue or PR. Useful as a first step in workflows that re-post updated status comments.
+
+```
+uses: Dispatcharr/repo-bot/actions/comment-collapse@v1
+```
+
+#### Inputs
+
+| Input | Required | Default | Description |
+|-------|----------|---------|-------------|
+| `github-token` | yes | | Bot installation token with Issues read/write permission |
+| `reason` | no | `OUTDATED` | Minimize classifier: `OUTDATED`, `RESOLVED`, `DUPLICATE`, `OFF_TOPIC`, `SPAM`, `ABUSE` |
+| `filter-login` | no | `''` | Only collapse comments by this login. If blank, collapses all comments where `user.type` is `Bot`. |
+
+#### Usage
+
+```yaml
+steps:
+  - uses: actions/create-github-app-token@v1
+    id: app-token
+    with:
+      app-id: ${{ secrets.BOT_APP_ID }}
+      private-key: ${{ secrets.BOT_PRIVATE_KEY }}
+
+  - uses: Dispatcharr/repo-bot/actions/comment-collapse@v1
+    with:
+      github-token: ${{ steps.app-token.outputs.token }}
+      reason: OUTDATED
+
+  # ... post a fresh comment after collapsing old ones
+```
+
+---
+
+### branch-guard
+
+Checks that a PR targets an allowed branch. Supports `*` (single path segment) and `**` (multi-segment) wildcards in branch patterns.
+
+```
+uses: Dispatcharr/repo-bot/actions/branch-guard@v1
+```
+
+#### Inputs
+
+| Input | Required | Default | Description |
+|-------|----------|---------|-------------|
+| `github-token` | yes | | Bot installation token with Pull requests read/write permission |
+| `allowed-targets` | yes | | Comma-separated allowed target branch patterns (e.g. `main,release/*`) |
+| `enforcement` | no | `comment-only` | What to do when the check fails: `close`, `lock`, `close-and-lock`, `comment-only` |
+| `lock-reason` | no | `off-topic` | Lock reason when enforcement includes `lock`: `off-topic`, `too heated`, `resolved`, `spam` |
+| `comment` | no | built-in message | Comment to post on failure; `{target-branch}` is replaced with the actual base branch name |
+
+#### Usage
+
+```yaml
+on:
+  pull_request:
+    types: [opened, reopened]
+
+jobs:
+  branch-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/create-github-app-token@v1
+        id: app-token
+        with:
+          app-id: ${{ secrets.BOT_APP_ID }}
+          private-key: ${{ secrets.BOT_PRIVATE_KEY }}
+      - uses: Dispatcharr/repo-bot/actions/branch-guard@v1
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          allowed-targets: "main,release/*"
+          enforcement: close
+          comment: |
+            PRs must target `main` or a `release/*` branch.
+            This PR targets `{target-branch}` and has been closed.
+```
+
+---
+
 ## Versioning
 
 Actions are referenced by git tag. `@v1` is a floating tag that points to the latest `v1.x` release; `@v1.0.0` pins to a specific version.

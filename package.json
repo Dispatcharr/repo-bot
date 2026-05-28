@@ -4,8 +4,10 @@
   "description": "GitHub Action enforcing issue templates and PR markers for the Dispatcharr project",
   "scripts": {
     "build": "yarn build:all",
-    "build:all": "yarn build:template-enforcer",
+    "build:all": "yarn build:template-enforcer && yarn build:comment-collapse && yarn build:branch-guard",
     "build:template-enforcer": "ncc build actions/template-enforcer/src/index.ts -o actions/template-enforcer/dist --minify --source-map --license licenses.txt",
+    "build:comment-collapse": "ncc build actions/comment-collapse/src/index.ts -o actions/comment-collapse/dist --minify --source-map --license licenses.txt",
+    "build:branch-guard": "ncc build actions/branch-guard/src/index.ts -o actions/branch-guard/dist --minify --source-map --license licenses.txt",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

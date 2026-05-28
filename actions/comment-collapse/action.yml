@@ -1,0 +1,17 @@
+name: 'Comment Collapse'
+description: 'Minimizes bot comments on an issue or PR'
+inputs:
+  github-token:
+    description: 'Bot installation token with Issues read/write permission'
+    required: true
+  reason:
+    description: 'Minimize classifier: OUTDATED, RESOLVED, DUPLICATE, OFF_TOPIC, SPAM, ABUSE'
+    required: false
+    default: 'OUTDATED'
+  filter-login:
+    description: 'Only collapse comments by this login. If blank, collapses all comments where user.type is Bot.'
+    required: false
+    default: ''
+runs:
+  using: 'node24'
+  main: 'dist/index.js'
