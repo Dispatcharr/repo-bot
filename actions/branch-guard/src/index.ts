@@ -76,6 +76,12 @@ async function run(): Promise<void> {
     return
   }
 
+  const prAction = payload.action
+  if (prAction !== 'opened' && prAction !== 'reopened' && prAction !== 'edited') {
+    core.info(`Action is "${prAction}", skipping`)
+    return
+  }
+
   const pr = payload.pull_request!
   const targetBranch = pr.base.ref as string
   const prNumber = pr.number as number

@@ -134,7 +134,7 @@ async function run(): Promise<void> {
   }
 
   const action = payload.action
-  if (action !== 'opened' && action !== 'reopened') {
+  if (action !== 'opened' && action !== 'reopened' && action !== 'edited') {
     core.info(`Action is "${action}", skipping`)
     return
   }
