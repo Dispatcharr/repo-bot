@@ -1,0 +1,46 @@
+name: 'Dispatcharr Repo Bot'
+description: 'Enforces issue templates and PR markers for the Dispatcharr project'
+branding:
+  icon: 'shield'
+  color: 'blue'
+inputs:
+  github-token:
+    description: 'GitHub App installation token with Issues read/write permission'
+    required: true
+  required-markers:
+    description: 'Comma-separated strings that must all appear in the body'
+    required: false
+    default: ''
+  required-labels:
+    description: 'Comma-separated label names that must all be present on the item'
+    required: false
+    default: ''
+  required-type:
+    description: 'Comma-separated type names; the item type must match one of them'
+    required: false
+    default: ''
+  match:
+    description: 'How to combine checks: all (every configured check must pass) or any (at least one must pass)'
+    required: false
+    default: 'all'
+  event-type:
+    description: 'Limit this action to a specific event type: issue, pull_request, or any'
+    required: false
+    default: 'any'
+  enforcement:
+    description: 'Action to take on non-compliant items: close, lock, close-and-lock, or comment-only'
+    required: false
+    default: 'close'
+  lock-reason:
+    description: 'Reason used when locking (off-topic, too heated, resolved, spam). Only applies when enforcement includes lock.'
+    required: false
+    default: 'off-topic'
+  close-comment:
+    description: >
+      Comment posted on a non-compliant item.
+      Supports the {new-issue-url} placeholder.
+    required: false
+    default: ''
+runs:
+  using: 'node20'
+  main: 'dist/index.js'

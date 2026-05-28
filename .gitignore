@@ -1,0 +1,7 @@
+.*
+!.*ignore
+!.github
+node_modules/
+lib/
+# dist/ is intentionally committed - GitHub runs the action directly from it
+actions/*/dist/*.map
