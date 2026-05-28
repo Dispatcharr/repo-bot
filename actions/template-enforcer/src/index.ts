@@ -135,12 +135,12 @@ async function run(): Promise<void> {
     core.info(`event-type is "issue" but event is "${eventName}", skipping`)
     return
   }
-  if (eventTypeInput === 'pull_request' && eventName !== 'pull_request') {
+  if (eventTypeInput === 'pull_request' && eventName !== 'pull_request' && eventName !== 'pull_request_target') {
     core.info(`event-type is "pull_request" but event is "${eventName}", skipping`)
     return
   }
 
-  const isPR = eventName === 'pull_request'
+  const isPR = eventName === 'pull_request' || eventName === 'pull_request_target'
   const isIssue = eventName === 'issues'
 
   if (!isPR && !isIssue) {

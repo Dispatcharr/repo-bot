@@ -86,7 +86,7 @@ async function run(): Promise<void> {
 
   const { eventName, payload, repo } = github.context
 
-  if (eventName !== 'pull_request') {
+  if (eventName !== 'pull_request' && eventName !== 'pull_request_target') {
     core.info(`Event is "${eventName}", branch-guard only runs on pull_request events`)
     return
   }
