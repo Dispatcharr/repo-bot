@@ -175,13 +175,29 @@ jobs:
 
 ## Versioning
 
-Actions are referenced by git tag. `@v1` is a floating tag that points to the latest `v1.x` release; `@v1.0.0` pins to a specific version.
+Actions are referenced by git tag. `@v1` is a floating tag that points to the latest `v1.x` release; `@v1.0.0` pins to a specific version. All actions in this repo share the same tag.
 
-Run `yarn build` and commit `dist/` before tagging a release. To move the floating tag after a new release:
+**To cut a release:**
 
 ```bash
-git tag -f v1 && git push -f origin v1
+# 1. Build all actions
+yarn build
+
+# 2. Stage and commit the built files
+git add actions/*/dist/index.js actions/*/dist/licenses.txt
+git commit -m "build: v1.0.0"
+git push origin main
+
+# 3. Tag the specific version
+git tag v1.0.0
+git push origin v1.0.0
+
+# 4. Move the floating major tag
+git tag -f v1
+git push -f origin v1
 ```
+
+Consumers on `@v1` pick up the update automatically. Consumers pinned to `@v1.0.0` stay frozen until they opt in.
 
 ## Setup
 
