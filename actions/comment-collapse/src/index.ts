@@ -1,7 +1,10 @@
 import * as core from '@actions/core'
 import * as github from '@actions/github'
 
+const VALID_MODES = ['minimize', 'delete'] as const
 const VALID_REASONS = ['OUTDATED', 'RESOLVED', 'DUPLICATE', 'OFF_TOPIC', 'SPAM', 'ABUSE'] as const
+
+type Mode = typeof VALID_MODES[number]
 type Reason = typeof VALID_REASONS[number]
 
 const MINIMIZE_MUTATION = `
@@ -30,11 +33,16 @@ async function isCollaborator(
 
 async function run(): Promise<void> {
   const token = core.getInput('github-token', { required: true })
+  const modeInput = (core.getInput('mode') || 'minimize') as Mode
   const reasonInput = (core.getInput('reason') || 'OUTDATED').toUpperCase() as Reason
   const filterLogin = core.getInput('filter-login')
   const bypassForMembers = core.getBooleanInput('bypass-for-members')
 
-  if (!VALID_REASONS.includes(reasonInput)) {
+  if (!VALID_MODES.includes(modeInput)) {
+    core.setFailed(`Invalid mode: "${modeInput}". Must be one of: ${VALID_MODES.join(', ')}`)
+    return
+  }
+  if (modeInput === 'minimize' && !VALID_REASONS.includes(reasonInput)) {
     core.setFailed(`Invalid reason: "${reasonInput}". Must be one of: ${VALID_REASONS.join(', ')}`)
     return
   }
@@ -75,17 +83,26 @@ async function run(): Promise<void> {
     return
   }
 
-  core.info(`Collapsing ${targets.length} comment(s) with reason ${reasonInput}`)
+  core.info(`${modeInput === 'delete' ? 'Deleting' : 'Collapsing'} ${targets.length} comment(s)`)
 
   for (const comment of targets) {
     try {
-      await octokit.graphql(MINIMIZE_MUTATION, {
-        id: comment.node_id,
-        classifier: reasonInput,
-      })
-      core.info(`Collapsed comment ${comment.id}`)
+      if (modeInput === 'delete') {
+        await octokit.rest.issues.deleteComment({
+          owner,
+          repo: repoName,
+          comment_id: comment.id,
+        })
+        core.info(`Deleted comment ${comment.id}`)
+      } else {
+        await octokit.graphql(MINIMIZE_MUTATION, {
+          id: comment.node_id,
+          classifier: reasonInput,
+        })
+        core.info(`Minimized comment ${comment.id}`)
+      }
     } catch (err) {
-      core.warning(`Failed to collapse comment ${comment.id}: ${(err as Error).message}`)
+      core.warning(`Failed to process comment ${comment.id}: ${(err as Error).message}`)
     }
   }
 }

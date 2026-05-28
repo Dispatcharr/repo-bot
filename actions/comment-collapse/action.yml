@@ -4,8 +4,12 @@ inputs:
   github-token:
     description: 'Bot installation token with Issues read/write permission'
     required: true
+  mode:
+    description: 'What to do with matched comments: minimize or delete'
+    required: false
+    default: 'minimize'
   reason:
-    description: 'Minimize classifier: OUTDATED, RESOLVED, DUPLICATE, OFF_TOPIC, SPAM, ABUSE'
+    description: 'Minimize classifier (only used when mode is minimize): OUTDATED, RESOLVED, DUPLICATE, OFF_TOPIC, SPAM, ABUSE'
     required: false
     default: 'OUTDATED'
   bypass-for-members:
