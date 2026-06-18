@@ -1,0 +1,37 @@
+name: 'Size Guard'
+description: 'Checks that a PR does not change more lines than allowed'
+inputs:
+  github-token:
+    description: 'Bot installation token with Pull requests read/write permission'
+    required: true
+  max-additions:
+    description: 'Maximum number of added lines allowed. Leave blank for no limit.'
+    required: false
+    default: ''
+  max-deletions:
+    description: 'Maximum number of deleted lines allowed. Leave blank for no limit.'
+    required: false
+    default: ''
+  ignore-globs:
+    description: 'Comma-separated path globs whose files are excluded from the line counts. Supports * (single segment) and ** (multi-segment) wildcards.'
+    required: false
+    default: ''
+  enforcement:
+    description: 'Action to take when the PR exceeds the limits: close, lock, close-and-lock, comment-only'
+    required: false
+    default: 'comment-only'
+  lock-reason:
+    description: 'Reason used when locking (off-topic, too heated, resolved, spam). Only applies when enforcement includes lock.'
+    required: false
+    default: 'off-topic'
+  bypass-for-members:
+    description: 'If true, skip enforcement when the PR author is a repository collaborator'
+    required: false
+    default: 'false'
+  comment:
+    description: 'Comment to post when the check fails. {additions}, {deletions}, {max-additions}, and {max-deletions} are replaced with the actual values.'
+    required: false
+    default: ''
+runs:
+  using: 'node24'
+  main: 'dist/index.js'

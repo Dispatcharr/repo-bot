@@ -42,7 +42,7 @@ jobs:
   enforce-issues:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/create-github-app-token@v1
+      - uses: actions/create-github-app-token@v2
         id: app-token
         with:
           app-id: ${{ secrets.BOT_APP_ID }}
@@ -57,7 +57,7 @@ jobs:
   enforce-prs:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/create-github-app-token@v1
+      - uses: actions/create-github-app-token@v2
         id: app-token
         with:
           app-id: ${{ secrets.BOT_APP_ID }}
@@ -110,7 +110,7 @@ uses: Dispatcharr/repo-bot/actions/comment-collapse@v1
 
 ```yaml
 steps:
-  - uses: actions/create-github-app-token@v1
+  - uses: actions/create-github-app-token@v2
     id: app-token
     with:
       app-id: ${{ secrets.BOT_APP_ID }}
@@ -156,7 +156,7 @@ jobs:
   branch-check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/create-github-app-token@v1
+      - uses: actions/create-github-app-token@v2
         id: app-token
         with:
           app-id: ${{ secrets.BOT_APP_ID }}
@@ -169,6 +169,61 @@ jobs:
           comment: |
             PRs must target `main` or a `release/*` branch.
             This PR targets `{target-branch}` and has been closed.
+```
+
+---
+
+### size-guard
+
+Checks that a PR does not change more lines than allowed. Added and deleted lines are
+capped independently, and files matching `ignore-globs` are excluded from the counts.
+Supports `*` (single path segment) and `**` (multi-segment) wildcards in the globs.
+
+```
+uses: Dispatcharr/repo-bot/actions/size-guard@v1
+```
+
+#### Inputs
+
+| Input | Required | Default | Description |
+|-------|----------|---------|-------------|
+| `github-token` | yes | | Bot installation token with Pull requests read/write permission |
+| `max-additions` | no | (no limit) | Maximum number of added lines allowed. Leave blank for no limit. |
+| `max-deletions` | no | (no limit) | Maximum number of deleted lines allowed. Leave blank for no limit. |
+| `ignore-globs` | no | | Comma-separated path globs whose files are excluded from the counts (e.g. `yarn.lock,dist/**`) |
+| `enforcement` | no | `comment-only` | What to do when the check fails: `close`, `lock`, `close-and-lock`, `comment-only` |
+| `lock-reason` | no | `off-topic` | Lock reason when enforcement includes `lock`: `off-topic`, `too heated`, `resolved`, `spam` |
+| `comment` | no | built-in message | Comment to post on failure; `{additions}`, `{deletions}`, `{max-additions}`, `{max-deletions}` are replaced with the actual values |
+| `bypass-for-members` | no | `false` | If `true`, skip enforcement when the PR author is a repository collaborator |
+
+At least one of `max-additions` or `max-deletions` must be set.
+
+#### Usage
+
+```yaml
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+
+jobs:
+  size-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/create-github-app-token@v2
+        id: app-token
+        with:
+          app-id: ${{ secrets.BOT_APP_ID }}
+          private-key: ${{ secrets.BOT_PRIVATE_KEY }}
+      - uses: Dispatcharr/repo-bot/actions/size-guard@v1
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          max-additions: 500
+          max-deletions: 500
+          ignore-globs: "yarn.lock,**/*.snap,dist/**"
+          enforcement: comment-only
+          comment: |
+            This PR changes +{additions}/-{deletions} lines, over the +{max-additions}/-{max-deletions} limit.
+            Please split it into smaller pull requests.
 ```
 
 ---
