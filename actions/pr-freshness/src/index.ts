@@ -317,9 +317,9 @@ async function run(): Promise<void> {
           ? lastAuthorActivity
           : conflictObservedAt,
       }] : []),
-      ...(changesRequestedAt ? [{
+      ...(changesRequestedAt && (!lastAuthorActivity || lastAuthorActivity.getTime() <= changesRequestedAt.getTime()) ? [{
         message: 'changes requested',
-        eligibleSince: inactiveSince.getTime() > changesRequestedAt.getTime() ? inactiveSince : changesRequestedAt,
+        eligibleSince: changesRequestedAt,
       }] : []),
       ...(maintainerResponseAt ? [{
         message: 'maintainer response without author follow-up',
@@ -360,6 +360,7 @@ async function run(): Promise<void> {
         } else {
           await octokit.rest.issues.removeLabel({ owner, repo, issue_number: prNumber, name: staleLabel })
         }
+        await deleteComment(octokit, owner, repo, warning.id, dryRun)
         core.info(`Recovered PR #${prNumber}: ${authorActive ? 'author activity' : 'no eligibility reason remains'}`)
         continue
       }
