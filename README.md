@@ -173,6 +173,69 @@ jobs:
 
 ---
 
+### pr-freshness
+
+Warns on and enforces a configured policy for pull requests with no recent author activity. A PR is eligible when it has merge conflicts, has an effective changes-requested review, or has been inactive after a repository collaborator has responded to its latest author activity. This avoids closing contributions that maintainers have not yet triaged.
+
+```
+uses: Dispatcharr/repo-bot/actions/pr-freshness@v1
+```
+
+#### Inputs
+
+| Input | Required | Default | Description |
+|-------|----------|---------|-------------|
+| `github-token` | yes | | Bot installation token with Pull requests and Issues read/write permission |
+| `days-before-stale` | yes | | Whole days of author inactivity before the warning |
+| `days-before-close` | yes | | Whole days after the warning before enforcement |
+| `stale-label` | no | `stale` | Label applied while waiting for author activity |
+| `check-conflicts` | no | `true` | Treat merge conflicts as an eligibility reason |
+| `check-changes-requested` | no | `true` | Treat an effective `CHANGES_REQUESTED` review as an eligibility reason |
+| `check-maintainer-responded-stale` | no | `true` | Allow generic inactivity only after a collaborator review or comment |
+| `enforcement` | no | `close` | `close`, `lock`, `close-and-lock`, or `comment-only` |
+| `lock-reason` | no | `resolved` | Lock reason when enforcement includes lock |
+| `bypass-for-members` | no | `false` | Skip PRs opened by repository collaborators |
+| `stale-message` | no | built-in message | Warning comment; supports `{pr-number}`, `{reasons}`, `{days-before-close}`, and `{inactive-days}` |
+| `close-message` | no | built-in message | Enforcement comment; supports `{pr-number}` and `{reasons}` |
+| `dry-run` | no | `false` | Log intended changes without modifying GitHub state |
+
+The action tracks warnings with its own label and hidden comment marker. A comment, commit, edit, or reopen by the PR author clears the warning. Maintainer activity does not. It never deletes source branches. Closed PRs can be reopened.
+
+#### Usage
+
+Run this from the consuming repository's default branch. A daily schedule gives the most precise timing. A weekly schedule is also valid, but warnings and enforcement can occur up to a week after the configured threshold.
+
+```yaml
+name: PR freshness
+
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+jobs:
+  freshness:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/create-github-app-token@v2
+        id: app-token
+        with:
+          app-id: ${{ secrets.BOT_APP_ID }}
+          private-key: ${{ secrets.BOT_PRIVATE_KEY }}
+
+      - uses: Dispatcharr/repo-bot/actions/pr-freshness@v1
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          days-before-stale: 14
+          days-before-close: 7
+          enforcement: close
+          bypass-for-members: true
+```
+
+For a safe first run, set `dry-run: true`, inspect the logs, then remove it. The GitHub App needs Metadata read plus Pull requests and Issues read/write permissions. The action only inspects API metadata and never checks out PR code.
+
+---
+
 ## Versioning
 
 Actions are referenced by git tag. `@v1` is a floating tag that points to the latest `v1.x` release; `@v1.0.0` pins to a specific version. All actions in this repo share the same tag.

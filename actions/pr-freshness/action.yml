@@ -1,0 +1,56 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-action.json
+name: 'PR Freshness'
+description: 'Warns and enforces configured cleanup for inactive pull requests'
+inputs:
+  github-token:
+    description: 'Bot installation token with Pull requests and Issues read/write permission'
+    required: true
+  days-before-stale:
+    description: 'Whole days of PR author inactivity before warning is posted'
+    required: true
+  days-before-close:
+    description: 'Whole days after warning before enforcement is applied'
+    required: true
+  stale-label:
+    description: 'Label added while the PR is awaiting author activity'
+    required: false
+    default: 'stale'
+  check-conflicts:
+    description: 'Treat merge conflicts as an eligibility reason'
+    required: false
+    default: 'true'
+  check-changes-requested:
+    description: 'Treat an effective CHANGES_REQUESTED review as an eligibility reason'
+    required: false
+    default: 'true'
+  check-maintainer-responded-stale:
+    description: 'Treat generic inactivity as eligible only after a collaborator comment or review'
+    required: false
+    default: 'true'
+  enforcement:
+    description: 'Action to take after the grace period: close, lock, close-and-lock, or comment-only'
+    required: false
+    default: 'close'
+  lock-reason:
+    description: 'Reason used when locking (off-topic, too heated, resolved, spam). Only applies when enforcement includes lock.'
+    required: false
+    default: 'resolved'
+  bypass-for-members:
+    description: 'If true, skip PRs whose author is a repository collaborator'
+    required: false
+    default: 'false'
+  stale-message:
+    description: 'Warning comment. Supports {pr-number}, {reasons}, {days-before-close}, and {inactive-days}.'
+    required: false
+    default: ''
+  close-message:
+    description: 'Enforcement comment. Supports {pr-number} and {reasons}.'
+    required: false
+    default: ''
+  dry-run:
+    description: 'Log intended changes without modifying GitHub state'
+    required: false
+    default: 'false'
+runs:
+  using: 'node24'
+  main: 'dist/index.js'
