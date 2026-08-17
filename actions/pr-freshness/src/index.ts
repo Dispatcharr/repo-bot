@@ -5,11 +5,16 @@ const VALID_ENFORCEMENTS = ['close', 'lock', 'close-and-lock', 'comment-only'] a
 const VALID_LOCK_REASONS = ['off-topic', 'too heated', 'resolved', 'spam'] as const
 const WARNING_MARKER = '<!-- repo-bot:pr-freshness:warning -->'
 const ENFORCED_MARKER = '<!-- repo-bot:pr-freshness:enforced -->'
+const CONFLICT_MARKER = '<!-- repo-bot:pr-freshness:conflict-observed -->'
 const DAY_MS = 24 * 60 * 60 * 1000
 
 type Enforcement = typeof VALID_ENFORCEMENTS[number]
 type LockReason = typeof VALID_LOCK_REASONS[number]
 type Octokit = ReturnType<typeof github.getOctokit>
+type EligibilityReason = {
+  message: string
+  eligibleSince: Date
+}
 
 const DEFAULT_STALE_MESSAGE =
   'This pull request has had no activity from its author for {inactive-days} days ({reasons}). ' +
@@ -106,7 +111,7 @@ async function latestAuthorActivity(
   return activityDates.reduce((latest, date) => date.getTime() > latest.getTime() ? date : latest)
 }
 
-async function hasMaintainerResponse(
+async function latestMaintainerResponse(
   octokit: Octokit,
   owner: string,
   repo: string,
@@ -114,7 +119,7 @@ async function hasMaintainerResponse(
   author: string,
   after: Date,
   cache: Map<string, boolean>,
-): Promise<boolean> {
+): Promise<Date | null> {
   const [comments, reviews] = await Promise.all([
     octokit.paginate(octokit.rest.issues.listComments, { owner, repo, issue_number: prNumber, per_page: 100 }),
     octokit.paginate(octokit.rest.pulls.listReviews, { owner, repo, pull_number: prNumber, per_page: 100 }),
@@ -125,28 +130,32 @@ async function hasMaintainerResponse(
       .filter(comment =>
         comment.user?.type !== 'Bot' && comment.user?.login !== author && isAfter(comment.created_at, after),
       )
-      .map(comment => comment.user?.login),
+      .map(comment => ({ login: comment.user?.login, date: new Date(comment.created_at!) })),
     ...reviews
       .filter(review =>
         review.user?.type !== 'Bot' && review.user?.login !== author && isAfter(review.submitted_at, after),
       )
-      .map(review => review.user?.login),
-  ].filter((login): login is string => !!login)
+      .map(review => ({ login: review.user?.login, date: new Date(review.submitted_at!) })),
+  ].filter((response): response is { login: string, date: Date } => !!response.login)
 
-  for (const login of responders) {
-    if (await isCollaborator(octokit, owner, repo, login, cache)) return true
+  const maintainerResponseDates: Date[] = []
+  for (const response of responders) {
+    if (await isCollaborator(octokit, owner, repo, response.login, cache)) {
+      maintainerResponseDates.push(response.date)
+    }
   }
-  return false
+  if (maintainerResponseDates.length === 0) return null
+  return maintainerResponseDates.reduce((latest, date) => date.getTime() > latest.getTime() ? date : latest)
 }
 
-async function hasChangesRequested(
+async function latestChangesRequested(
   octokit: Octokit,
   owner: string,
   repo: string,
   prNumber: number,
   author: string,
   cache: Map<string, boolean>,
-): Promise<boolean> {
+): Promise<Date | null> {
   const reviews = await octokit.paginate(octokit.rest.pulls.listReviews, {
     owner,
     repo,
@@ -164,16 +173,18 @@ async function hasChangesRequested(
     }
   }
 
+  const changesRequestedDates: Date[] = []
   for (const review of latestByReviewer.values()) {
     const reviewer = review.user?.login
     if (
       review.state === 'CHANGES_REQUESTED' && reviewer && reviewer !== author &&
       await isCollaborator(octokit, owner, repo, reviewer, cache)
     ) {
-      return true
+      changesRequestedDates.push(new Date(review.submitted_at!))
     }
   }
-  return false
+  if (changesRequestedDates.length === 0) return null
+  return changesRequestedDates.reduce((latest, date) => date.getTime() > latest.getTime() ? date : latest)
 }
 
 async function createComment(
@@ -189,6 +200,20 @@ async function createComment(
     return
   }
   await octokit.rest.issues.createComment({ owner, repo, issue_number: prNumber, body })
+}
+
+async function deleteComment(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  commentId: number,
+  dryRun: boolean,
+): Promise<void> {
+  if (dryRun) {
+    core.info(`[dry-run] Would delete conflict state comment ${commentId}`)
+    return
+  }
+  await octokit.rest.issues.deleteComment({ owner, repo, comment_id: commentId })
 }
 
 async function run(): Promise<void> {
@@ -260,25 +285,54 @@ async function run(): Promise<void> {
     )
     const inactiveSince = lastAuthorActivity ?? new Date(pr.created_at)
 
-    const [changesRequested, maintainerResponded] = await Promise.all([
-      checkChangesRequested ? hasChangesRequested(octokit, owner, repo, prNumber, author, collaboratorCache) : false,
-      checkMaintainerRespondedStale
-        ? hasMaintainerResponse(octokit, owner, repo, prNumber, author, inactiveSince, collaboratorCache)
-        : false,
-    ])
     const conflicted = checkConflicts && (pr.mergeable === false || pr.mergeable_state === 'dirty')
-    const reasons = [
-      ...(conflicted ? ['merge conflicts'] : []),
-      ...(changesRequested ? ['changes requested'] : []),
-      ...(maintainerResponded ? ['maintainer response without author follow-up'] : []),
-    ]
-    const stale = hasLabel(pr.labels, staleLabel)
     const comments = await octokit.paginate(octokit.rest.issues.listComments, {
       owner,
       repo,
       issue_number: prNumber,
       per_page: 100,
     })
+    const conflictMarker = [...comments].reverse().find(comment => comment.body?.includes(CONFLICT_MARKER))
+    let conflictObservedAt = conflictMarker?.created_at ? new Date(conflictMarker.created_at) : null
+    if (conflicted && !conflictObservedAt) {
+      await createComment(octokit, owner, repo, prNumber, CONFLICT_MARKER, dryRun)
+      conflictObservedAt = now
+      core.info(`Started conflict timer for PR #${prNumber}`)
+    } else if (!conflicted && conflictMarker) {
+      await deleteComment(octokit, owner, repo, conflictMarker.id, dryRun)
+      core.info(`Cleared conflict timer for PR #${prNumber}`)
+    }
+
+    const [changesRequestedAt, maintainerResponseAt] = await Promise.all([
+      checkChangesRequested ? latestChangesRequested(octokit, owner, repo, prNumber, author, collaboratorCache) : null,
+      checkMaintainerRespondedStale
+        ? latestMaintainerResponse(octokit, owner, repo, prNumber, author, inactiveSince, collaboratorCache)
+        : null,
+    ])
+    const eligibilityReasons: EligibilityReason[] = [
+      ...(conflictObservedAt ? [{
+        message: 'merge conflicts',
+        // Author activity resets a warning, so begin a fresh conflict interval.
+        eligibleSince: lastAuthorActivity && lastAuthorActivity.getTime() > conflictObservedAt.getTime()
+          ? lastAuthorActivity
+          : conflictObservedAt,
+      }] : []),
+      ...(changesRequestedAt ? [{
+        message: 'changes requested',
+        eligibleSince: inactiveSince.getTime() > changesRequestedAt.getTime() ? inactiveSince : changesRequestedAt,
+      }] : []),
+      ...(maintainerResponseAt ? [{
+        message: 'maintainer response without author follow-up',
+        eligibleSince: maintainerResponseAt,
+      }] : []),
+    ]
+    const reasons = eligibilityReasons
+      .filter(reason => daysSince(reason.eligibleSince, now) >= daysBeforeStale)
+      .map(reason => reason.message)
+    const inactiveDays = reasons.length === 0 ? 0 : Math.max(...eligibilityReasons
+      .filter(reason => reasons.includes(reason.message))
+      .map(reason => daysSince(reason.eligibleSince, now)))
+    const stale = hasLabel(pr.labels, staleLabel)
     const warning = [...comments].reverse().find(comment => comment.body?.includes(WARNING_MARKER))
 
     if (stale) {
@@ -287,7 +341,6 @@ async function run(): Promise<void> {
           core.info(`PR #${prNumber} has ${staleLabel} but no active freshness eligibility reason`)
           continue
         }
-        const inactiveDays = daysSince(inactiveSince, now)
         const body = `${format(staleMessage, {
           'pr-number': String(prNumber),
           reasons: reasons.join(', '),
@@ -336,16 +389,11 @@ async function run(): Promise<void> {
       continue
     }
 
-    if (daysSince(inactiveSince, now) < daysBeforeStale) {
-      core.info(`PR #${prNumber} is not inactive long enough`)
-      continue
-    }
     if (reasons.length === 0) {
-      core.info(`PR #${prNumber} has no enabled freshness eligibility reason`)
+      core.info(`PR #${prNumber} has no freshness eligibility reason old enough`)
       continue
     }
 
-    const inactiveDays = daysSince(inactiveSince, now)
     const body = `${format(staleMessage, {
       'pr-number': String(prNumber),
       reasons: reasons.join(', '),

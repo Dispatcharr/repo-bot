@@ -175,7 +175,7 @@ jobs:
 
 ### pr-freshness
 
-Warns on and enforces a configured policy for pull requests with no recent author activity. A PR is eligible when it has merge conflicts, has an effective changes-requested review, or has been inactive after a repository collaborator has responded to its latest author activity. This avoids closing contributions that maintainers have not yet triaged.
+Warns on and enforces a configured policy for pull requests with no recent author activity. A PR is eligible when a merge conflict has persisted for the configured duration, an effective changes-requested review has gone unanswered for that duration, or a repository collaborator's comment or review has gone unanswered for that duration. This avoids closing contributions that maintainers have not yet triaged.
 
 ```
 uses: Dispatcharr/repo-bot/actions/pr-freshness@v1
@@ -199,7 +199,7 @@ uses: Dispatcharr/repo-bot/actions/pr-freshness@v1
 | `close-message` | no | built-in message | Enforcement comment; supports `{pr-number}` and `{reasons}` |
 | `dry-run` | no | `false` | Log intended changes without modifying GitHub state |
 
-The action tracks warnings with its own label and hidden comment marker. A comment, commit, edit, or reopen by the PR author clears the warning. Maintainer activity does not. It never deletes source branches. Closed PRs can be reopened.
+The action tracks warnings with its own label and hidden comment marker. It also uses a hidden comment marker to measure how long a merge conflict has persisted, beginning when the action first observes the conflict and deleting the marker once resolved. A comment, commit, edit, or reopen by the PR author clears the warning. Maintainer activity does not. It never deletes source branches. Closed PRs can be reopened.
 
 #### Usage
 
