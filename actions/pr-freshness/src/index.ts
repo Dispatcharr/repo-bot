@@ -35,6 +35,14 @@ function hasLabel(labels: Array<{ name?: string }>, label: string): boolean {
   return labels.some(item => item.name === label)
 }
 
+function isOwnedMarkerComment(
+  comment: { body?: string | null, user?: { login?: string | null } | null },
+  marker: string,
+  botLogin: string,
+): boolean {
+  return comment.user?.login === botLogin && comment.body?.includes(marker) === true
+}
+
 function daysSince(date: string | Date, now: Date): number {
   return Math.floor((now.getTime() - new Date(date).getTime()) / DAY_MS)
 }
@@ -254,6 +262,8 @@ async function run(): Promise<void> {
 
   const octokit = github.getOctokit(token)
   const { owner, repo } = github.context.repo
+  const { data: authenticatedUser } = await octokit.rest.users.getAuthenticated()
+  const botLogin = authenticatedUser.login
   const now = new Date()
   const collaboratorCache = new Map<string, boolean>()
   const pullRequests = await octokit.paginate(octokit.rest.pulls.list, {
@@ -292,7 +302,9 @@ async function run(): Promise<void> {
       issue_number: prNumber,
       per_page: 100,
     })
-    const conflictMarker = [...comments].reverse().find(comment => comment.body?.includes(CONFLICT_MARKER))
+    const conflictMarker = [...comments].reverse().find(comment =>
+      isOwnedMarkerComment(comment, CONFLICT_MARKER, botLogin),
+    )
     let conflictObservedAt = conflictMarker?.created_at ? new Date(conflictMarker.created_at) : null
     if (conflicted && !conflictObservedAt) {
       await createComment(octokit, owner, repo, prNumber, CONFLICT_MARKER, dryRun)
@@ -333,7 +345,9 @@ async function run(): Promise<void> {
       .filter(reason => reasons.includes(reason.message))
       .map(reason => daysSince(reason.eligibleSince, now)))
     const stale = hasLabel(pr.labels, staleLabel)
-    const warning = [...comments].reverse().find(comment => comment.body?.includes(WARNING_MARKER))
+    const warning = [...comments].reverse().find(comment =>
+      isOwnedMarkerComment(comment, WARNING_MARKER, botLogin),
+    )
 
     if (stale) {
       if (!warning?.created_at) {
@@ -369,7 +383,7 @@ async function run(): Promise<void> {
         continue
       }
       const alreadyEnforced = comments.some(comment =>
-        comment.body?.includes(ENFORCED_MARKER) && isAfter(comment.created_at, warnedAt),
+        isOwnedMarkerComment(comment, ENFORCED_MARKER, botLogin) && isAfter(comment.created_at, warnedAt),
       )
       if (alreadyEnforced) {
         core.info(`PR #${prNumber} was already enforced for its current warning`)

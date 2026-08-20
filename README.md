@@ -199,7 +199,7 @@ uses: Dispatcharr/repo-bot/actions/pr-freshness@v1
 | `close-message` | no | built-in message | Enforcement comment; supports `{pr-number}` and `{reasons}` |
 | `dry-run` | no | `false` | Log intended changes without modifying GitHub state |
 
-The action tracks warnings with its own label and hidden comment marker. It also uses a hidden comment marker to measure how long a merge conflict has persisted, beginning when the action first observes the conflict and deleting the marker once resolved. A comment, commit, edit, or reopen by the PR author removes the warning label and comment. Author activity after a changes-requested review clears that review condition until a maintainer requests changes again. Maintainer activity does not. It never deletes source branches. Closed PRs can be reopened.
+The action tracks warnings with its own label and hidden comment marker. It only recognizes, deletes, or uses markers on comments authored by the authenticated bot account. It also uses a hidden comment marker to measure how long a merge conflict has persisted, beginning when the action first observes the conflict and deleting the marker once resolved. A comment, commit, edit, or reopen by the PR author removes the warning label and comment. Author activity after a changes-requested review clears that review condition until a maintainer requests changes again. Maintainer activity does not. It never deletes source branches. Closed PRs can be reopened.
 
 #### Usage
 
