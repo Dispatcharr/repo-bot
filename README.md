@@ -25,6 +25,7 @@ uses: Dispatcharr/repo-bot/actions/template-enforcer@v1
 | `enforcement` | no | `close` | What to do with non-compliant items: `close`, `lock`, `close-and-lock`, `comment-only` |
 | `lock-reason` | no | `off-topic` | Lock reason when enforcement includes `lock`: `off-topic`, `too heated`, `resolved`, `spam` |
 | `close-comment` | no | built-in message | Comment posted on non-compliant items; `{new-issue-url}` is replaced with the repo's template chooser URL |
+| `compliance-marker` | no | `''` | Hidden marker appended to a non-compliance comment. Configure the same marker in `pr-freshness` to make unresolved compliance a freshness condition. |
 | `bypass-for-members` | no | `false` | If `true`, skip enforcement when the item author is a repository collaborator |
 
 #### Usage
@@ -68,9 +69,12 @@ jobs:
           event-type: pull_request
           required-markers: "### Description,### Testing"
           enforcement: comment-only
+          compliance-marker: repo-bot:pr-compliance
 ```
 
 When a PR event fires, `enforce-issues` exits immediately (wrong event type) and vice versa. `required-markers` should match section headings from your templates.
+
+When `compliance-marker` is configured, the action appends it as an HTML comment whenever an item fails its configured checks. Pair it with `pr-freshness` to close inactive PRs whose compliance remains unresolved. The marker is action-owned and is not part of the consumer's visible `close-comment` text.
 
 To override the default comment, use the `close-comment` input. `{new-issue-url}` is replaced with a link to the template chooser:
 
@@ -192,6 +196,8 @@ uses: Dispatcharr/repo-bot/actions/pr-freshness@v1
 | `check-conflicts` | no | `true` | Treat merge conflicts as an eligibility reason |
 | `check-changes-requested` | no | `true` | Treat an effective `CHANGES_REQUESTED` review as an eligibility reason |
 | `check-maintainer-responded-stale` | no | `true` | Allow generic inactivity only after a collaborator review or comment |
+| `check-compliance` | no | `false` | Treat a matching unresolved `template-enforcer` compliance marker as an eligibility reason |
+| `compliance-marker` | when `check-compliance` is true | `''` | Hidden marker emitted by `template-enforcer` for unresolved compliance |
 | `enforcement` | no | `close` | `close`, `lock`, `close-and-lock`, or `comment-only` |
 | `lock-reason` | no | `resolved` | Lock reason when enforcement includes lock |
 | `bypass-for-members` | no | `false` | Skip PRs opened by repository collaborators |
@@ -200,6 +206,8 @@ uses: Dispatcharr/repo-bot/actions/pr-freshness@v1
 | `dry-run` | no | `false` | Log intended changes without modifying GitHub state |
 
 The action tracks warnings with its own label and hidden comment marker. It only recognizes, deletes, or uses markers on comments authored by the authenticated bot account. It also uses a hidden comment marker to measure how long a merge conflict has persisted, beginning when the action first observes the conflict and deleting the marker once resolved. A comment, commit, edit, or reopen by the PR author removes the warning label and comment. Author activity after a changes-requested review clears that review condition until a maintainer requests changes again. Maintainer activity does not. It never deletes source branches. Closed PRs can be reopened.
+
+When `check-compliance` is enabled, a matching bot-authored marker emitted by `template-enforcer` is another eligibility reason. It remains active until the compliance comment is removed or replaced without the marker. Author activity after the marker resets its inactivity timer without resolving the compliance condition.
 
 #### Usage
 
@@ -228,6 +236,8 @@ jobs:
           github-token: ${{ steps.app-token.outputs.token }}
           days-before-stale: 14
           days-before-close: 7
+          check-compliance: true
+          compliance-marker: repo-bot:pr-compliance
           enforcement: close
           bypass-for-members: true
 ```
