@@ -111,6 +111,7 @@ async function run(): Promise<void> {
   const enforcementInput = (core.getInput('enforcement') || 'close') as Enforcement
   const lockReasonInput = (core.getInput('lock-reason') || 'off-topic') as LockReason
   const bypassForMembers = core.getBooleanInput('bypass-for-members')
+  const complianceMarker = core.getInput('compliance-marker').trim()
 
   if (!VALID_EVENT_TYPES.includes(eventTypeInput as typeof VALID_EVENT_TYPES[number])) {
     core.setFailed(`Invalid event-type: "${eventTypeInput}". Must be one of: ${VALID_EVENT_TYPES.join(', ')}`)
@@ -200,7 +201,9 @@ async function run(): Promise<void> {
   const itemLabel = isPR ? 'pull request' : 'issue'
   const newIssueUrl = `https://github.com/${owner}/${repoName}/issues/new/choose`
   const commentTemplate = core.getInput('close-comment') || defaultComment(itemLabel)
-  const comment = commentTemplate.replace(/\{new-issue-url\}/g, newIssueUrl)
+  const comment = `${commentTemplate.replace(/\{new-issue-url\}/g, newIssueUrl)}${
+    complianceMarker ? `\n\n<!-- ${complianceMarker} -->` : ''
+  }`
 
   await enforce(octokit, owner, repoName, number, isPR, enforcementInput, lockReasonInput, comment)
 }

@@ -27,6 +27,14 @@ inputs:
     description: 'Treat generic inactivity as eligible only after a collaborator comment or review'
     required: false
     default: 'true'
+  check-compliance:
+    description: 'Treat an unresolved template-enforcer compliance marker as an eligibility reason'
+    required: false
+    default: 'false'
+  compliance-marker:
+    description: 'Hidden template-enforcer marker identifying unresolved PR compliance. Required when check-compliance is true.'
+    required: false
+    default: ''
   enforcement:
     description: 'Action to take after the grace period: close, lock, close-and-lock, or comment-only'
     required: false

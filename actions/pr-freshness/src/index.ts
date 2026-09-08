@@ -234,6 +234,8 @@ async function run(): Promise<void> {
   const checkConflicts = core.getBooleanInput('check-conflicts')
   const checkChangesRequested = core.getBooleanInput('check-changes-requested')
   const checkMaintainerRespondedStale = core.getBooleanInput('check-maintainer-responded-stale')
+  const checkCompliance = core.getBooleanInput('check-compliance')
+  const complianceMarker = core.getInput('compliance-marker').trim()
   const bypassForMembers = core.getBooleanInput('bypass-for-members')
   const dryRun = core.getBooleanInput('dry-run')
 
@@ -255,8 +257,12 @@ async function run(): Promise<void> {
     core.setFailed(`Invalid lock-reason: "${lockReason}". Must be one of: ${VALID_LOCK_REASONS.join(', ')}`)
     return
   }
-  if (!checkConflicts && !checkChangesRequested && !checkMaintainerRespondedStale) {
+  if (!checkConflicts && !checkChangesRequested && !checkMaintainerRespondedStale && !checkCompliance) {
     core.setFailed('Enable at least one eligibility check')
+    return
+  }
+  if (checkCompliance && !complianceMarker) {
+    core.setFailed('compliance-marker is required when check-compliance is true')
     return
   }
 
@@ -305,6 +311,9 @@ async function run(): Promise<void> {
     const conflictMarker = [...comments].reverse().find(comment =>
       isOwnedMarkerComment(comment, CONFLICT_MARKER, botLogin),
     )
+    const complianceComment = checkCompliance
+      ? [...comments].reverse().find(comment => isOwnedMarkerComment(comment, complianceMarker, botLogin))
+      : undefined
     let conflictObservedAt = conflictMarker?.created_at ? new Date(conflictMarker.created_at) : null
     if (conflicted && !conflictObservedAt) {
       await createComment(octokit, owner, repo, prNumber, CONFLICT_MARKER, dryRun)
@@ -336,6 +345,12 @@ async function run(): Promise<void> {
       ...(maintainerResponseAt ? [{
         message: 'maintainer response without author follow-up',
         eligibleSince: maintainerResponseAt,
+      }] : []),
+      ...(complianceComment?.created_at ? [{
+        message: 'unresolved PR compliance',
+        eligibleSince: lastAuthorActivity && lastAuthorActivity.getTime() > new Date(complianceComment.created_at).getTime()
+          ? lastAuthorActivity
+          : new Date(complianceComment.created_at),
       }] : []),
     ]
     const reasons = eligibilityReasons

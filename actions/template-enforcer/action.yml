@@ -45,6 +45,10 @@ inputs:
       Supports the {new-issue-url} placeholder.
     required: false
     default: ''
+  compliance-marker:
+    description: 'Hidden marker appended to comments for unresolved non-compliance. Configure the same value in pr-freshness to make it an eligibility condition.'
+    required: false
+    default: ''
 runs:
   using: 'node24'
   main: 'dist/index.js'
