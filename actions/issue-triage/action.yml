@@ -44,6 +44,10 @@ inputs:
     description: 'Optional owner/repository used for related-issue search and context-files. Blank uses the calling repository; issue mutations always target the calling repository.'
     required: false
     default: ''
+  context-branch:
+    description: 'Branch used for context-files or automatic repository search. Blank uses the context repository default branch.'
+    required: false
+    default: ''
   allowed-dispositions:
     description: 'Comma-separated disposition values the model may recommend.'
     required: false
@@ -65,13 +69,17 @@ inputs:
     required: false
     default: 'false'
   context-files:
-    description: 'Comma-separated repository-relative text files to include as untrusted context when present.'
+    description: 'Comma-separated repository-relative text files to include as untrusted context. When blank, search context-branch for files relevant to the issue.'
     required: false
-    default: 'CHANGELOG.md'
+    default: ''
   max-context-bytes:
     description: 'Maximum UTF-8 bytes read from each context file.'
     required: false
     default: '40000'
+  max-context-files:
+    description: 'Maximum repository files included from automatic context search.'
+    required: false
+    default: '10'
   max-related-issues:
     description: 'Maximum related issue search results included as context.'
     required: false

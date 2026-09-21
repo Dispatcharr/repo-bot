@@ -77,7 +77,7 @@ function parseRepository(input: string, fallback: { owner: string, repo: string 
   return { owner, repo }
 }
 
-async function readContextFiles(octokit: Octokit, owner: string, repo: string, files: string[], maxBytes: number): Promise<Record<string, string>> {
+async function readContextFiles(octokit: Octokit, owner: string, repo: string, ref: string, files: string[], maxBytes: number): Promise<Record<string, string>> {
   const contexts: Record<string, string> = {}
 
   for (const file of files) {
@@ -86,17 +86,50 @@ async function readContextFiles(octokit: Octokit, owner: string, repo: string, f
       continue
     }
     try {
-      const { data } = await octokit.rest.repos.getContent({ owner, repo, path: file })
+      const { data } = await octokit.rest.repos.getContent({ owner, repo, path: file, ref })
       if (Array.isArray(data) || data.type !== 'file' || !data.content) {
         core.warning(`Skipping non-file context path: ${file}`)
         continue
       }
-      contexts[file] = Buffer.from(data.content, 'base64').subarray(0, maxBytes).toString('utf8')
+      contexts[`${ref}:${file}`] = Buffer.from(data.content, 'base64').subarray(0, maxBytes).toString('utf8')
     } catch {
       core.info(`Context file unavailable from ${owner}/${repo}: ${file}`)
     }
   }
   return contexts
+}
+
+async function collectRepositoryContext(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  branchInput: string,
+  files: string[],
+  terms: string,
+  maxBytes: number,
+  maxFiles: number,
+): Promise<Record<string, string>> {
+  const { data: repository } = await octokit.rest.repos.get({ owner, repo })
+  const branch = branchInput.trim() || repository.default_branch
+  if (files.length > 0) return readContextFiles(octokit, owner, repo, branch, files, maxBytes)
+
+  const queryTerms = terms.split(' ').slice(0, 3).join(' ')
+  if (!queryTerms) {
+    core.warning(`No searchable issue terms for ${owner}/${repo}@${branch}; no repository context included`)
+    return {}
+  }
+  try {
+    const { data } = await octokit.rest.search.code({
+      q: `repo:${owner}/${repo} ref:${branch} ${queryTerms}`,
+      per_page: maxFiles,
+    })
+    const paths = [...new Set(data.items.map(item => item.path))]
+    core.info(`Found ${paths.length} repository context file(s) in ${owner}/${repo}@${branch}`)
+    return readContextFiles(octokit, owner, repo, branch, paths, maxBytes)
+  } catch (error) {
+    core.warning(`Repository context search failed for ${owner}/${repo}@${branch}: ${(error as Error).message}`)
+    return {}
+  }
 }
 
 function userPrompt(input: {
@@ -122,7 +155,7 @@ function userPrompt(input: {
     quoteEvidence('issue', input.issue),
     quoteEvidence('issue-comments', input.comments),
     quoteEvidence('related-issues', input.relatedIssues),
-    quoteEvidence('repository-context-files', input.contextFiles),
+    quoteEvidence('repository-context', input.contextFiles),
   ].join('\n\n')
 }
 
@@ -270,6 +303,7 @@ async function run(): Promise<void> {
   const bypassForMembers = core.getBooleanInput('bypass-for-members')
   const dryRun = core.getBooleanInput('dry-run')
   const maxContextBytes = parsePositiveInteger(core.getInput('max-context-bytes'), 'max-context-bytes')
+  const maxContextFiles = parsePositiveInteger(core.getInput('max-context-files'), 'max-context-files')
   const maxRelatedIssues = parsePositiveInteger(core.getInput('max-related-issues'), 'max-related-issues')
   const maxCommentLength = parsePositiveInteger(core.getInput('max-comment-length'), 'max-comment-length')
   const { eventName, payload, repo } = github.context
@@ -294,7 +328,16 @@ async function run(): Promise<void> {
   const [labels, relatedIssues, contextFiles, prompt] = await Promise.all([
     octokit.paginate(octokit.rest.issues.listLabelsForRepo, { owner, repo: repoName, per_page: 100 }),
     octokit.rest.search.issuesAndPullRequests({ q: `repo:${contextRepository.owner}/${contextRepository.repo} is:issue ${searchTerms(issue.title, issue.body ?? null)}`, per_page: maxRelatedIssues }),
-    readContextFiles(octokit, contextRepository.owner, contextRepository.repo, csv(core.getInput('context-files')), maxContextBytes),
+    collectRepositoryContext(
+      octokit,
+      contextRepository.owner,
+      contextRepository.repo,
+      core.getInput('context-branch'),
+      csv(core.getInput('context-files')),
+      searchTerms(issue.title, issue.body ?? null),
+      maxContextBytes,
+      maxContextFiles,
+    ),
     readPrompt(core.getInput('prompt-file')),
   ])
   const repositoryLabels = new Set(labels.map(label => label.name))
