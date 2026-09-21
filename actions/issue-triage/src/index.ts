@@ -316,14 +316,15 @@ async function run(): Promise<void> {
   const { owner, repo: repoName } = repo
   const contextRepository = parseRepository(core.getInput('context-repository'), { owner, repo: repoName })
   const issueNumber = payload.issue.number
-  const [{ data: issue }, { data: authenticatedUser }] = await Promise.all([
+  const [{ data: issue }, { data: authenticatedApp }] = await Promise.all([
     octokit.rest.issues.get({ owner, repo: repoName, issue_number: issueNumber }),
-    octokit.rest.users.getAuthenticated(),
+    octokit.rest.apps.getAuthenticated(),
   ])
+  const botLogin = `${authenticatedApp.slug}[bot]`
   if (issue.state !== 'open' || !hasLabel(issue.labels, triageLabel)) return core.info(`Issue #${issueNumber} is not an open triage candidate`)
   if (bypassForMembers && issue.user?.login && await isCollaborator(octokit, owner, repoName, issue.user.login)) return core.info(`Skipping collaborator issue #${issueNumber}`)
   const comments = await octokit.paginate(octokit.rest.issues.listComments, { owner, repo: repoName, issue_number: issueNumber, per_page: 100 })
-  if (comments.some(comment => markerComment(comment, marker, authenticatedUser.login))) return core.info(`Issue #${issueNumber} was already triaged by this bot`)
+  if (comments.some(comment => markerComment(comment, marker, botLogin))) return core.info(`Issue #${issueNumber} was already triaged by this bot`)
 
   const [labels, relatedIssues, contextFiles, prompt] = await Promise.all([
     octokit.paginate(octokit.rest.issues.listLabelsForRepo, { owner, repo: repoName, per_page: 100 }),
