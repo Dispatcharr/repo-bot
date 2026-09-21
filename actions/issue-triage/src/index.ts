@@ -291,6 +291,7 @@ function validateResult(value: unknown, repositoryLabels: Set<string>, allowedDi
 
 async function run(): Promise<void> {
   const token = core.getInput('github-token', { required: true })
+  const botLogin = core.getInput('bot-login', { required: true })
   const provider = (core.getInput('provider') || 'auto') as Provider
   if (!VALID_PROVIDERS.includes(provider)) throw new Error(`Invalid provider: ${provider}`)
   const triageLabel = core.getInput('triage-label') || 'Triage'
@@ -316,11 +317,7 @@ async function run(): Promise<void> {
   const { owner, repo: repoName } = repo
   const contextRepository = parseRepository(core.getInput('context-repository'), { owner, repo: repoName })
   const issueNumber = payload.issue.number
-  const [{ data: issue }, { data: authenticatedApp }] = await Promise.all([
-    octokit.rest.issues.get({ owner, repo: repoName, issue_number: issueNumber }),
-    octokit.rest.apps.getAuthenticated(),
-  ])
-  const botLogin = `${authenticatedApp.slug}[bot]`
+  const { data: issue } = await octokit.rest.issues.get({ owner, repo: repoName, issue_number: issueNumber })
   if (issue.state !== 'open' || !hasLabel(issue.labels, triageLabel)) return core.info(`Issue #${issueNumber} is not an open triage candidate`)
   if (bypassForMembers && issue.user?.login && await isCollaborator(octokit, owner, repoName, issue.user.login)) return core.info(`Skipping collaborator issue #${issueNumber}`)
   const comments = await octokit.paginate(octokit.rest.issues.listComments, { owner, repo: repoName, issue_number: issueNumber, per_page: 100 })

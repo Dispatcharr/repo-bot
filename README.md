@@ -261,6 +261,7 @@ uses: Dispatcharr/repo-bot/actions/issue-triage@v1
 | Input | Required | Default | Description |
 |-------|----------|---------|-------------|
 | `github-token` | yes | | Bot installation token with Metadata and Issues read/write permission |
+| `bot-login` | yes | | GitHub App bot login that owns triage comments, such as `my-app[bot]`. |
 | `provider` | no | `auto` | `auto`, `copilot`, or `openai`. `auto` selects Copilot for a GitHub token and OpenAI otherwise. |
 | `provider-key` | yes | | For Copilot, the workflow `github.token`; for OpenAI, a provider API key stored as a consuming-repository secret. |
 | `provider-model` | for OpenAI | | Provider model ID. Copilot uses `auto` when blank. |
@@ -316,6 +317,7 @@ jobs:
       - uses: Dispatcharr/repo-bot/actions/issue-triage@v1
         with:
           github-token: ${{ steps.app-token.outputs.token }}
+          bot-login: dispatcharr-issues-bot[bot]
           provider: copilot
           provider-key: ${{ github.token }}
           provider-model: auto

@@ -4,6 +4,9 @@ inputs:
   github-token:
     description: 'GitHub App installation token with Issues read/write and Metadata read permission'
     required: true
+  bot-login:
+    description: 'GitHub App bot login that owns this action's comments, for example my-app[bot].'
+    required: true
   provider:
     description: 'Inference provider: auto, copilot, or openai. Auto selects Copilot for a GitHub token and OpenAI otherwise.'
     required: false
