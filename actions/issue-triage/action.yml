@@ -29,7 +29,7 @@ inputs:
     required: false
     default: 'latest'
   prompt-file:
-    description: 'Path to the triage system prompt. Blank uses this action's bundled prompts/triage.md; a relative path is resolved from the calling repository workspace.'
+    description: "Path to the triage system prompt. Blank uses this action's bundled prompts/triage.md; a relative path is resolved from the calling repository workspace."
     required: false
     default: ''
   triage-label:
@@ -37,7 +37,7 @@ inputs:
     required: false
     default: 'Triage'
   completion-marker:
-    description: 'Unique marker added to this action's report comment to prevent duplicate triage.'
+    description: "Unique marker added to this action's report comment to prevent duplicate triage."
     required: false
     default: 'repo-bot:issue-triage'
   context-repository:
