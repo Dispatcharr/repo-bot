@@ -1,7 +1,8 @@
 import * as core from '@actions/core'
 import * as github from '@actions/github'
-import { readFile, realpath } from 'node:fs/promises'
-import { resolve, sep } from 'node:path'
+import { spawn } from 'node:child_process'
+import { access, mkdir, readFile } from 'node:fs/promises'
+import { resolve } from 'node:path'
 
 const VALID_PROVIDERS = ['auto', 'copilot', 'openai'] as const
 const VALID_STATUSES = ['still-an-issue', 'fixed-released', 'fixed-unreleased', 'unclear', 'working-as-designed', 'invalid', 'duplicate', 'related'] as const
@@ -67,10 +68,16 @@ function searchTerms(title: string, body: string | null): string {
     .join(' ')
 }
 
-async function readContextFiles(files: string[], maxBytes: number): Promise<Record<string, string>> {
-  const workspace = process.env.GITHUB_WORKSPACE
-  if (!workspace) return {}
-  const root = await realpath(workspace)
+function parseRepository(input: string, fallback: { owner: string, repo: string }): { owner: string, repo: string } {
+  if (!input.trim()) return fallback
+  const [owner, repo, extra] = input.trim().split('/')
+  if (!owner || !repo || extra || !/^[A-Za-z0-9_.-]+$/.test(owner) || !/^[A-Za-z0-9_.-]+$/.test(repo)) {
+    throw new Error('context-repository must use owner/repository format')
+  }
+  return { owner, repo }
+}
+
+async function readContextFiles(octokit: Octokit, owner: string, repo: string, files: string[], maxBytes: number): Promise<Record<string, string>> {
   const contexts: Record<string, string> = {}
 
   for (const file of files) {
@@ -79,16 +86,14 @@ async function readContextFiles(files: string[], maxBytes: number): Promise<Reco
       continue
     }
     try {
-      const path = resolve(root, file)
-      const actualPath = await realpath(path)
-      if (!actualPath.startsWith(`${root}${sep}`) && actualPath !== root) {
-        core.warning(`Skipping context file outside workspace: ${file}`)
+      const { data } = await octokit.rest.repos.getContent({ owner, repo, path: file })
+      if (Array.isArray(data) || data.type !== 'file' || !data.content) {
+        core.warning(`Skipping non-file context path: ${file}`)
         continue
       }
-      const data = await readFile(actualPath)
-      contexts[file] = data.subarray(0, maxBytes).toString('utf8')
+      contexts[file] = Buffer.from(data.content, 'base64').subarray(0, maxBytes).toString('utf8')
     } catch {
-      core.info(`Context file unavailable: ${file}`)
+      core.info(`Context file unavailable from ${owner}/${repo}: ${file}`)
     }
   }
   return contexts
@@ -149,12 +154,70 @@ async function requestOpenAi(baseUrl: string, key: string, model: string, system
   }
 }
 
-async function requestInference(provider: Provider, key: string, model: string, baseUrl: string, system: string, user: string): Promise<unknown> {
-  if (provider === 'copilot') {
-    throw new Error('Copilot is not available through this action until a supported noninteractive GitHub Actions integration is configured')
+async function runCommand(command: string, args: string[], env: NodeJS.ProcessEnv, timeoutMs: number): Promise<string> {
+  return new Promise<string>((resolveOutput, reject) => {
+    const child = spawn(command, args, { env, stdio: ['ignore', 'pipe', 'pipe'] })
+    let stdout = ''
+    child.stdout.on('data', chunk => { stdout += chunk.toString() })
+    const timeout = setTimeout(() => child.kill(), timeoutMs)
+    child.once('error', error => {
+      clearTimeout(timeout)
+      reject(new Error(`Unable to start ${command}: ${error.message}`))
+    })
+    child.once('close', code => {
+      clearTimeout(timeout)
+      if (code !== 0) reject(new Error(`${command} failed with exit code ${code ?? 'unknown'}`))
+      else resolveOutput(stdout)
+    })
+  })
+}
+
+async function copilotCliPath(configuredPath: string, version: string): Promise<string> {
+  if (configuredPath) return configuredPath
+  if (version !== 'latest' && !/^\d+\.\d+\.\d+(?:[-+][\w.-]+)?$/.test(version)) {
+    throw new Error('copilot-cli-version must be latest or an exact semver version')
   }
+  const prefix = resolve(process.env.RUNNER_TEMP ?? process.cwd(), 'repo-bot-copilot-cli')
+  const executable = resolve(prefix, 'node_modules', '.bin', 'copilot')
+  try {
+    await access(executable)
+    return executable
+  } catch {
+    await mkdir(prefix, { recursive: true })
+    core.info(`Installing Copilot CLI (${version}) in the runner temporary directory`)
+    await runCommand('npm', ['install', '--no-save', '--prefix', prefix, `@github/copilot@${version}`], process.env, 120_000)
+    return executable
+  }
+}
+
+async function requestCopilot(token: string, model: string, configuredCliPath: string, cliVersion: string, system: string, user: string): Promise<unknown> {
+  if (!token) throw new Error('provider-key must be the workflow GITHUB_TOKEN when provider is copilot')
+  const prompt = `${system}\n\n${user}`
+  const output = await runCommand(await copilotCliPath(configuredCliPath, cliVersion), [
+      '--prompt', prompt,
+      '--model', model || 'auto',
+      '--deny-tool=shell',
+      '--deny-tool=write',
+    ],
+    // Installation tokens are accepted only through the CLI runtime environment.
+    { ...process.env, COPILOT_GITHUB_TOKEN: token, GH_TOKEN: undefined, GITHUB_TOKEN: undefined },
+    120_000)
+  try {
+    return JSON.parse(output)
+  } catch {
+    throw new Error('Copilot response was not valid JSON')
+  }
+}
+
+function isGitHubToken(value: string): boolean {
+  return /^(gh[opsu]_\w+|github_pat_\w+)/.test(value)
+}
+
+async function requestInference(provider: Provider, key: string, model: string, baseUrl: string, cliPath: string, cliVersion: string, system: string, user: string): Promise<unknown> {
+  if (provider === 'copilot') return requestCopilot(key, model, cliPath, cliVersion, system, user)
+  if (provider === 'auto' && isGitHubToken(key)) return requestCopilot(key, model, cliPath, cliVersion, system, user)
   if (!key || !model) throw new Error('provider-key and provider-model are required for OpenAI-compatible inference')
-  if (provider === 'auto') core.info('No supported Copilot integration is configured; using the OpenAI-compatible fallback')
+  if (provider === 'auto') core.info('provider-key is not a GitHub token; using the OpenAI-compatible fallback')
   return requestOpenAi(baseUrl, key, model, system, user)
 }
 
@@ -217,6 +280,7 @@ async function run(): Promise<void> {
 
   const octokit = github.getOctokit(token)
   const { owner, repo: repoName } = repo
+  const contextRepository = parseRepository(core.getInput('context-repository'), { owner, repo: repoName })
   const issueNumber = payload.issue.number
   const [{ data: issue }, { data: authenticatedUser }] = await Promise.all([
     octokit.rest.issues.get({ owner, repo: repoName, issue_number: issueNumber }),
@@ -229,12 +293,12 @@ async function run(): Promise<void> {
 
   const [labels, relatedIssues, contextFiles, prompt] = await Promise.all([
     octokit.paginate(octokit.rest.issues.listLabelsForRepo, { owner, repo: repoName, per_page: 100 }),
-    octokit.rest.search.issuesAndPullRequests({ q: `repo:${owner}/${repoName} is:issue ${searchTerms(issue.title, issue.body ?? null)}`, per_page: maxRelatedIssues }),
-    readContextFiles(csv(core.getInput('context-files')), maxContextBytes),
+    octokit.rest.search.issuesAndPullRequests({ q: `repo:${contextRepository.owner}/${contextRepository.repo} is:issue ${searchTerms(issue.title, issue.body ?? null)}`, per_page: maxRelatedIssues }),
+    readContextFiles(octokit, contextRepository.owner, contextRepository.repo, csv(core.getInput('context-files')), maxContextBytes),
     readPrompt(core.getInput('prompt-file')),
   ])
   const repositoryLabels = new Set(labels.map(label => label.name))
-  const result = validateResult(await requestInference(provider, core.getInput('provider-key'), core.getInput('provider-model'), core.getInput('provider-base-url'), prompt, userPrompt({
+  const result = validateResult(await requestInference(provider, core.getInput('provider-key'), core.getInput('provider-model'), core.getInput('provider-base-url'), core.getInput('copilot-cli-path'), core.getInput('copilot-cli-version'), prompt, userPrompt({
     issue: { number: issue.number, title: issue.title, body: issue.body, createdAt: issue.created_at, updatedAt: issue.updated_at, labels: issue.labels.map(label => typeof label === 'string' ? label : label.name) },
     comments: comments.map(comment => ({ author: comment.user?.login, createdAt: comment.created_at, body: comment.body })),
     labels: [...repositoryLabels],

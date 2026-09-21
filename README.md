@@ -225,6 +225,8 @@ jobs:
   freshness:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+
       - uses: actions/create-github-app-token@v2
         id: app-token
         with:
@@ -259,19 +261,22 @@ uses: Dispatcharr/repo-bot/actions/issue-triage@v1
 | Input | Required | Default | Description |
 |-------|----------|---------|-------------|
 | `github-token` | yes | | Bot installation token with Metadata and Issues read/write permission |
-| `provider` | no | `auto` | `auto`, `copilot`, or `openai`. `auto` uses OpenAI-compatible fallback when a key is supplied. |
-| `provider-key` | for OpenAI fallback | | Provider API key. Store it as a consuming-repository secret. |
-| `provider-model` | for OpenAI fallback | | Provider model ID enabled for the supplied key. |
+| `provider` | no | `auto` | `auto`, `copilot`, or `openai`. `auto` selects Copilot for a GitHub token and OpenAI otherwise. |
+| `provider-key` | yes | | For Copilot, the workflow `github.token`; for OpenAI, a provider API key stored as a consuming-repository secret. |
+| `provider-model` | for OpenAI | | Provider model ID. Copilot uses `auto` when blank. |
 | `provider-base-url` | no | OpenAI API URL | OpenAI-compatible API base URL. |
+| `copilot-cli-path` | no | `''` | Optional Copilot CLI executable path. The action installs the CLI if blank. |
+| `copilot-cli-version` | no | `latest` | Copilot CLI npm version to install. Use `latest` or an exact semver version. |
 | `prompt-file` | no | bundled prompt | Override the action prompt with a file from the calling repository workspace. |
 | `triage-label` | no | `Triage` | Label that enables triage on issue open or label assignment. |
 | `completion-marker` | no | `repo-bot:issue-triage` | Hidden bot-owned report marker used for idempotency. |
+| `context-repository` | no | calling repository | `owner/repository` used to search related issues and read context files. All issue mutations remain in the calling repository. |
 | `allowed-dispositions` | no | built-in list | Comma-separated dispositions permitted for model output. |
 | `allow-label-changes` | no | `true` | Apply validated label additions and removals. |
 | `allow-close` | no | `true` | Close issues for an allowed closing disposition. |
 | `remove-triage-label` | no | `true` | Remove the trigger label after successful processing. |
 | `bypass-for-members` | no | `false` | Skip issues opened by repository collaborators. |
-| `context-files` | no | `CHANGELOG.md` | Comma-separated repository-relative text files to include as context. Requires checkout. |
+| `context-files` | no | `CHANGELOG.md` | Comma-separated repository-relative text files read from `context-repository`. |
 | `max-context-bytes` | no | `40000` | Maximum bytes read from each context file. |
 | `max-related-issues` | no | `10` | Maximum related issue search results supplied to the model. |
 | `max-comment-length` | no | `4000` | Maximum model-provided report length. |
@@ -300,8 +305,6 @@ jobs:
       cancel-in-progress: false
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
       - uses: actions/create-github-app-token@v2
         id: app-token
         with:
@@ -311,17 +314,18 @@ jobs:
       - uses: Dispatcharr/repo-bot/actions/issue-triage@v1
         with:
           github-token: ${{ steps.app-token.outputs.token }}
-          provider: auto
-          provider-key: ${{ secrets.TRIAGE_AI_KEY }}
-          provider-model: ${{ vars.TRIAGE_AI_MODEL }}
+          provider: copilot
+          provider-key: ${{ github.token }}
+          provider-model: auto
           prompt-file: .github/triage-prompt.md
+          context-repository: Dispatcharr/Dispatcharr
           context-files: CHANGELOG.md,docs/triage-context.md
           dry-run: true
 ```
 
-Start with `dry-run: true`. Remove it only after reviewing logs in a test repository. Set `allow-close: false` to retain automatic reports and labels while disabling automatic closures. The GitHub App needs Metadata read and Issues read/write permissions. `context-files` are optional, but if configured the workflow must check out the default branch before this action runs.
+Start with `dry-run: true`. Remove it only after reviewing logs in a test repository. Set `allow-close: false` to retain automatic reports and labels while disabling automatic closures. The GitHub App needs Metadata read and Issues read/write permissions. When `context-repository` differs from the calling repository, the App installation token must also have read access to that repository. `actions/checkout` is only needed when using a caller-provided `prompt-file`.
 
-`provider: copilot` fails without a supported noninteractive Copilot integration. `provider: auto` currently uses the configured OpenAI-compatible key and model as its fallback. The inference key is not used for GitHub mutations, and the GitHub App token is not sent to the inference provider.
+For Copilot, grant the workflow `contents: read` and `copilot-requests: write`, then pass `${{ github.token }}` as `provider-key`. The action installs the requested Copilot CLI version in the runner temporary directory unless `copilot-cli-path` is set. The organization must enable its **Allow use of Copilot CLI billed to the organization** policy. The GitHub App token remains limited to bot-authored GitHub mutations and is never sent to the inference provider. Use `provider: openai` with an API key and model for an OpenAI-compatible fallback.
 
 ---
 

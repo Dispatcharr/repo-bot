@@ -5,21 +5,29 @@ inputs:
     description: 'GitHub App installation token with Issues read/write and Metadata read permission'
     required: true
   provider:
-    description: 'Inference provider: auto, copilot, or openai. Auto uses OpenAI when provider-key is set.'
+    description: 'Inference provider: auto, copilot, or openai. Auto selects Copilot for a GitHub token and OpenAI otherwise.'
     required: false
     default: 'auto'
   provider-key:
-    description: 'Inference provider API key. Required for openai and auto when no supported Copilot integration is available.'
+    description: 'Inference credential. For Copilot, pass the workflow GITHUB_TOKEN with copilot-requests: write; for OpenAI, pass the provider API key.'
     required: false
     default: ''
   provider-model:
-    description: 'Inference model ID. Required for openai and auto when provider-key is set.'
+    description: 'Inference model ID. Required for OpenAI; defaults to Copilot auto routing when blank.'
     required: false
     default: ''
   provider-base-url:
     description: 'OpenAI-compatible API base URL.'
     required: false
     default: 'https://api.openai.com/v1'
+  copilot-cli-path:
+    description: 'Optional Copilot CLI executable path. When blank, the action installs the configured Copilot CLI version in the runner temporary directory.'
+    required: false
+    default: ''
+  copilot-cli-version:
+    description: 'Copilot CLI npm version to install when copilot-cli-path is blank. Use latest or an exact semver version.'
+    required: false
+    default: 'latest'
   prompt-file:
     description: 'Path to the triage system prompt. Blank uses this action's bundled prompts/triage.md; a relative path is resolved from the calling repository workspace.'
     required: false
@@ -32,6 +40,10 @@ inputs:
     description: 'Unique marker added to this action's report comment to prevent duplicate triage.'
     required: false
     default: 'repo-bot:issue-triage'
+  context-repository:
+    description: 'Optional owner/repository used for related-issue search and context-files. Blank uses the calling repository; issue mutations always target the calling repository.'
+    required: false
+    default: ''
   allowed-dispositions:
     description: 'Comma-separated disposition values the model may recommend.'
     required: false
