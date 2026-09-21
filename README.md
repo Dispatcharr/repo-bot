@@ -246,6 +246,85 @@ For a safe first run, set `dry-run: true`, inspect the logs, then remove it. The
 
 ---
 
+### issue-triage
+
+Uses a configured AI provider to assess an issue carrying a triage label. It gathers the issue, comments, repository labels, related issue search results, and optional checked-out repository files. The model returns a validated recommendation only. The action, using the supplied GitHub App token, performs the allowed label, comment, and close changes.
+
+```
+uses: Dispatcharr/repo-bot/actions/issue-triage@v1
+```
+
+#### Inputs
+
+| Input | Required | Default | Description |
+|-------|----------|---------|-------------|
+| `github-token` | yes | | Bot installation token with Metadata and Issues read/write permission |
+| `provider` | no | `auto` | `auto`, `copilot`, or `openai`. `auto` uses OpenAI-compatible fallback when a key is supplied. |
+| `provider-key` | for OpenAI fallback | | Provider API key. Store it as a consuming-repository secret. |
+| `provider-model` | for OpenAI fallback | | Provider model ID enabled for the supplied key. |
+| `provider-base-url` | no | OpenAI API URL | OpenAI-compatible API base URL. |
+| `prompt-file` | no | bundled prompt | Override the action prompt with a file from the calling repository workspace. |
+| `triage-label` | no | `Triage` | Label that enables triage on issue open or label assignment. |
+| `completion-marker` | no | `repo-bot:issue-triage` | Hidden bot-owned report marker used for idempotency. |
+| `allowed-dispositions` | no | built-in list | Comma-separated dispositions permitted for model output. |
+| `allow-label-changes` | no | `true` | Apply validated label additions and removals. |
+| `allow-close` | no | `true` | Close issues for an allowed closing disposition. |
+| `remove-triage-label` | no | `true` | Remove the trigger label after successful processing. |
+| `bypass-for-members` | no | `false` | Skip issues opened by repository collaborators. |
+| `context-files` | no | `CHANGELOG.md` | Comma-separated repository-relative text files to include as context. Requires checkout. |
+| `max-context-bytes` | no | `40000` | Maximum bytes read from each context file. |
+| `max-related-issues` | no | `10` | Maximum related issue search results supplied to the model. |
+| `max-comment-length` | no | `4000` | Maximum model-provided report length. |
+| `dry-run` | no | `false` | Log validated changes without modifying GitHub state. |
+
+Issue bodies, comments, related issues, and context files are untrusted evidence. They are tagged as untrusted in the prompt, cannot issue GitHub API operations, and model output must pass local schema and repository-label validation before the action mutates GitHub state. Every completed triage posts a bot comment with its assessment, estimated effort, functional area, priority, recommendation, and supporting notes.
+
+#### Usage
+
+Run from the consuming repository's default branch. The per-issue concurrency group prevents duplicate work when a newly opened issue already carries `Triage`, which can produce both `opened` and `labeled` events.
+
+```yaml
+name: Issue triage
+
+on:
+  issues:
+    types: [opened, labeled]
+
+jobs:
+  triage:
+    if: >-
+      github.event.action == 'opened' ||
+      (github.event.action == 'labeled' && github.event.label.name == 'Triage')
+    concurrency:
+      group: issue-triage-${{ github.event.issue.number }}
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/create-github-app-token@v2
+        id: app-token
+        with:
+          app-id: ${{ secrets.BOT_APP_ID }}
+          private-key: ${{ secrets.BOT_PRIVATE_KEY }}
+
+      - uses: Dispatcharr/repo-bot/actions/issue-triage@v1
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          provider: auto
+          provider-key: ${{ secrets.TRIAGE_AI_KEY }}
+          provider-model: ${{ vars.TRIAGE_AI_MODEL }}
+          prompt-file: .github/triage-prompt.md
+          context-files: CHANGELOG.md,docs/triage-context.md
+          dry-run: true
+```
+
+Start with `dry-run: true`. Remove it only after reviewing logs in a test repository. Set `allow-close: false` to retain automatic reports and labels while disabling automatic closures. The GitHub App needs Metadata read and Issues read/write permissions. `context-files` are optional, but if configured the workflow must check out the default branch before this action runs.
+
+`provider: copilot` fails without a supported noninteractive Copilot integration. `provider: auto` currently uses the configured OpenAI-compatible key and model as its fallback. The inference key is not used for GitHub mutations, and the GitHub App token is not sent to the inference provider.
+
+---
+
 ## Versioning
 
 Actions are referenced by git tag. `@v1` is a floating tag that points to the latest `v1.x` release; `@v1.0.0` pins to a specific version. All actions in this repo share the same tag.

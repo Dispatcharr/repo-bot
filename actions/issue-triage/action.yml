@@ -1,0 +1,77 @@
+name: 'Issue Triage'
+description: 'Automatically triages labeled issues using repository context and a configured AI provider'
+inputs:
+  github-token:
+    description: 'GitHub App installation token with Issues read/write and Metadata read permission'
+    required: true
+  provider:
+    description: 'Inference provider: auto, copilot, or openai. Auto uses OpenAI when provider-key is set.'
+    required: false
+    default: 'auto'
+  provider-key:
+    description: 'Inference provider API key. Required for openai and auto when no supported Copilot integration is available.'
+    required: false
+    default: ''
+  provider-model:
+    description: 'Inference model ID. Required for openai and auto when provider-key is set.'
+    required: false
+    default: ''
+  provider-base-url:
+    description: 'OpenAI-compatible API base URL.'
+    required: false
+    default: 'https://api.openai.com/v1'
+  prompt-file:
+    description: 'Path to the triage system prompt. Blank uses this action's bundled prompts/triage.md; a relative path is resolved from the calling repository workspace.'
+    required: false
+    default: ''
+  triage-label:
+    description: 'Label that triggers triage.'
+    required: false
+    default: 'Triage'
+  completion-marker:
+    description: 'Unique marker added to this action's report comment to prevent duplicate triage.'
+    required: false
+    default: 'repo-bot:issue-triage'
+  allowed-dispositions:
+    description: 'Comma-separated disposition values the model may recommend.'
+    required: false
+    default: 'keep-open,needs-experienced-contributor,close-completed,close-duplicate,close-not-planned,close-invalid,close-wontfix,close-stale,working-as-designed'
+  allow-label-changes:
+    description: 'Apply validated label additions and removals.'
+    required: false
+    default: 'true'
+  allow-close:
+    description: 'Close issues when the validated disposition is a closing disposition.'
+    required: false
+    default: 'true'
+  remove-triage-label:
+    description: 'Remove triage-label after all enabled triage mutations succeed.'
+    required: false
+    default: 'true'
+  bypass-for-members:
+    description: 'Skip issues opened by repository collaborators.'
+    required: false
+    default: 'false'
+  context-files:
+    description: 'Comma-separated repository-relative text files to include as untrusted context when present.'
+    required: false
+    default: 'CHANGELOG.md'
+  max-context-bytes:
+    description: 'Maximum UTF-8 bytes read from each context file.'
+    required: false
+    default: '40000'
+  max-related-issues:
+    description: 'Maximum related issue search results included as context.'
+    required: false
+    default: '10'
+  max-comment-length:
+    description: 'Maximum characters in the model-provided triage report before the action marker is appended.'
+    required: false
+    default: '4000'
+  dry-run:
+    description: 'Log validated triage changes without modifying GitHub state.'
+    required: false
+    default: 'false'
+runs:
+  using: 'node24'
+  main: 'dist/index.js'
