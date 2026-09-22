@@ -284,6 +284,7 @@ uses: Dispatcharr/repo-bot/actions/issue-triage@v1
 | `max-context-files` | no | `10` | Maximum files included from automatic context search. |
 | `max-related-issues` | no | `10` | Maximum related issue search results supplied to the model. |
 | `max-comment-length` | no | `4000` | Maximum model-provided report length. |
+| `inference-timeout-seconds` | no | `300` | Maximum time for each provider inference request. |
 | `dry-run` | no | `false` | Skip issue mutations. Every run writes its rendered assessment to the workflow summary. |
 
 After successful processing, the action always removes the trigger label.

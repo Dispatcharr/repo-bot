@@ -95,6 +95,10 @@ inputs:
     description: "Maximum characters in the model-provided triage report before the action marker is appended."
     required: false
     default: '4000'
+  inference-timeout-seconds:
+    description: "Maximum seconds to wait for each provider inference request."
+    required: false
+    default: '300'
   dry-run:
     description: "Log validated triage changes without modifying GitHub state."
     required: false

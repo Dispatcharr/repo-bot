@@ -184,12 +184,12 @@ async function collectRepositoryContext(
   }
 }
 
-async function planContextQueries(provider: Provider, key: string, model: string, baseUrl: string, cliPath: string, cliVersion: string, issue: unknown, comments: unknown): Promise<string[]> {
+async function planContextQueries(provider: Provider, key: string, model: string, baseUrl: string, cliPath: string, cliVersion: string, issue: unknown, comments: unknown, timeoutSeconds: number): Promise<string[]> {
   try {
     const startedAt = Date.now()
     core.info('Phase 1/3: planning targeted code-search queries with prompts/context-search.md')
     const prompt = await readFile(resolve(__dirname, '..', 'prompts', 'context-search.md'), 'utf8')
-    const queries = contextSearchQueries(await requestInference(provider, key, model, baseUrl, cliPath, cliVersion, prompt, `${quoteEvidence('issue', issue)}\n\n${quoteEvidence('issue-comments', comments)}`))
+    const queries = contextSearchQueries(await requestInference(provider, key, model, baseUrl, cliPath, cliVersion, prompt, `${quoteEvidence('issue', issue)}\n\n${quoteEvidence('issue-comments', comments)}`, timeoutSeconds))
     core.info(`Phase 1/3 complete in ${((Date.now() - startedAt) / 1000).toFixed(1)}s. Planned ${queries.length} targeted code-search query(s): ${queries.join(', ') || '(none)'}`)
     return queries
   } catch (error) {
@@ -237,9 +237,9 @@ function redactError(value: string): string {
     .slice(0, 1_000)
 }
 
-async function requestOpenAi(baseUrl: string, key: string, model: string, system: string, user: string): Promise<unknown> {
+async function requestOpenAi(baseUrl: string, key: string, model: string, system: string, user: string, timeoutSeconds: number): Promise<unknown> {
   const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), 120_000)
+  const timeout = setTimeout(() => controller.abort(), timeoutSeconds * 1_000)
   try {
     const response = await fetch(`${baseUrl.replace(/\/$/, '')}/chat/completions`, {
       method: 'POST',
@@ -264,16 +264,16 @@ async function requestOpenAi(baseUrl: string, key: string, model: string, system
       const requestId = response.headers.get('x-request-id')
       throw new Error(`Inference request failed with HTTP ${response.status}${requestId ? ` (request ${requestId})` : ''}: ${redactError(message)}`)
     }
-    const payload = await response.json() as { choices?: Array<{ message?: { content?: string } }> }
+    const payload = await response.json() as { choices?: Array<{ finish_reason?: string | null, message?: { content?: string | null } }>, error?: { message?: string } }
     const content = payload.choices?.[0]?.message?.content
-    if (!content) throw new Error('Inference response did not contain a message')
+    if (!content) throw new Error(`Inference response did not contain a message (finish reason: ${payload.choices?.[0]?.finish_reason ?? 'unknown'}${payload.error?.message ? `, error: ${redactError(payload.error.message)}` : ''})`)
     try {
       return JSON.parse(content)
     } catch {
       throw new Error('Inference response was not valid JSON')
     }
   } catch (error) {
-    if (controller.signal.aborted) throw new Error('Inference request timed out after 120 seconds')
+    if (controller.signal.aborted) throw new Error(`Inference request timed out after ${timeoutSeconds} seconds`)
     throw error
   } finally {
     clearTimeout(timeout)
@@ -318,7 +318,7 @@ async function copilotCliPath(configuredPath: string, version: string): Promise<
   }
 }
 
-async function requestCopilot(token: string, model: string, configuredCliPath: string, cliVersion: string, system: string, user: string): Promise<unknown> {
+async function requestCopilot(token: string, model: string, configuredCliPath: string, cliVersion: string, system: string, user: string, timeoutSeconds: number): Promise<unknown> {
   if (!token) throw new Error('provider-key must be the workflow GITHUB_TOKEN when provider is copilot')
   const prompt = `${system}\n\n${user}`
   let output: string
@@ -331,7 +331,7 @@ async function requestCopilot(token: string, model: string, configuredCliPath: s
       ],
       // Installation tokens are accepted only through the CLI runtime environment.
       { ...process.env, COPILOT_GITHUB_TOKEN: token, GH_TOKEN: undefined, GITHUB_TOKEN: undefined },
-      120_000)
+      timeoutSeconds * 1_000)
   } catch (error) {
     throw new Error((error as Error).message.split(token).join('***'))
   }
@@ -346,12 +346,12 @@ function isGitHubToken(value: string): boolean {
   return /^(gh[opsu]_\w+|github_pat_\w+)/.test(value)
 }
 
-async function requestInference(provider: Provider, key: string, model: string, baseUrl: string, cliPath: string, cliVersion: string, system: string, user: string): Promise<unknown> {
-  if (provider === 'copilot') return requestCopilot(key, model, cliPath, cliVersion, system, user)
-  if (provider === 'auto' && isGitHubToken(key)) return requestCopilot(key, model, cliPath, cliVersion, system, user)
+async function requestInference(provider: Provider, key: string, model: string, baseUrl: string, cliPath: string, cliVersion: string, system: string, user: string, timeoutSeconds: number): Promise<unknown> {
+  if (provider === 'copilot') return requestCopilot(key, model, cliPath, cliVersion, system, user, timeoutSeconds)
+  if (provider === 'auto' && isGitHubToken(key)) return requestCopilot(key, model, cliPath, cliVersion, system, user, timeoutSeconds)
   if (!key || !model) throw new Error('provider-key and provider-model are required for OpenAI-compatible inference')
   if (provider === 'auto') core.info('provider-key is not a GitHub token; using the OpenAI-compatible fallback')
-  return requestOpenAi(baseUrl, key, model, system, user)
+  return requestOpenAi(baseUrl, key, model, system, user, timeoutSeconds)
 }
 
 function validateResult(value: unknown, repositoryLabels: Set<string>, allowedDispositions: Set<string>, maxCommentLength: number, marker: string): TriageResult {
@@ -413,6 +413,7 @@ async function run(): Promise<void> {
   const maxContextFiles = parsePositiveInteger(core.getInput('max-context-files'), 'max-context-files')
   const maxRelatedIssues = parsePositiveInteger(core.getInput('max-related-issues'), 'max-related-issues')
   const maxCommentLength = parsePositiveInteger(core.getInput('max-comment-length'), 'max-comment-length')
+  const inferenceTimeoutSeconds = parsePositiveInteger(core.getInput('inference-timeout-seconds'), 'inference-timeout-seconds')
   const { eventName, payload, repo } = github.context
   if (eventName !== 'issues' || !payload.issue) return core.info('Issue Triage only runs on issue events')
   const eventAction = payload.action
@@ -429,7 +430,7 @@ async function run(): Promise<void> {
   const comments = await octokit.paginate(octokit.rest.issues.listComments, { owner, repo: repoName, issue_number: issueNumber, per_page: 100 })
   if (!allowRetriage && comments.some(comment => markerComment(comment, marker, botLogin))) return core.info(`Issue #${issueNumber} was already triaged by this bot`)
   const deterministicQueries = searchTerms(issue.title, issue.body ?? null)
-  const plannedQueries = await planContextQueries(provider, core.getInput('provider-key'), core.getInput('provider-model'), core.getInput('provider-base-url'), core.getInput('copilot-cli-path'), core.getInput('copilot-cli-version'), { title: issue.title, body: issue.body }, comments.map(comment => ({ author: comment.user?.login, body: comment.body })))
+  const plannedQueries = await planContextQueries(provider, core.getInput('provider-key'), core.getInput('provider-model'), core.getInput('provider-base-url'), core.getInput('copilot-cli-path'), core.getInput('copilot-cli-version'), { title: issue.title, body: issue.body }, comments.map(comment => ({ author: comment.user?.login, body: comment.body })), inferenceTimeoutSeconds)
   const contextQueries = [...new Set([...plannedQueries.slice(0, 2), ...deterministicQueries.slice(0, 2)])]
   core.info(`Using ${contextQueries.length} total code-search query(s), including deterministic fallback: ${contextQueries.join(', ') || '(none)'}`)
 
@@ -462,7 +463,7 @@ async function run(): Promise<void> {
     relatedIssues: relatedIssues.data.items.filter(item => contextRepository.owner !== owner || contextRepository.repo !== repoName || item.number !== issueNumber).map((item, index) => ({ number: item.number, title: item.title, state: item.state, body: index < 3 ? truncateContext(item.body ?? '', 6_000) : undefined, labels: item.labels })),
     contextFiles,
     allowedDispositions: [...allowedDispositions],
-  }))
+  }), inferenceTimeoutSeconds)
   core.info(`Phase 3/3 complete in ${((Date.now() - triageStartedAt) / 1000).toFixed(1)}s. Validating model output`)
   const result = validateResult(inference, repositoryLabels, allowedDispositions, maxCommentLength, marker)
   core.info(`Validated triage for issue #${issueNumber}: ${JSON.stringify({ status: result.status, effort: result.effort, priority: result.priority, disposition: result.disposition, labelsToAdd: result.labelsToAdd, labelsToRemove: result.labelsToRemove, relatedIssueNumbers: result.relatedIssueNumbers })}`)
