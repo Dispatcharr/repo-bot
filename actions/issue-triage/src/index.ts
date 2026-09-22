@@ -360,19 +360,25 @@ async function run(): Promise<void> {
   core.info(`Validated triage for issue #${issueNumber}: ${JSON.stringify({ status: result.status, effort: result.effort, priority: result.priority, disposition: result.disposition, labelsToAdd: result.labelsToAdd, labelsToRemove: result.labelsToRemove, relatedIssueNumbers: result.relatedIssueNumbers })}`)
 
   const closing = CLOSING_DISPOSITIONS.has(result.disposition)
+  const labelsToAdd = !closing && repositoryLabels.has(result.priority)
+    ? [...new Set([...result.labelsToAdd, result.priority])]
+    : result.labelsToAdd
+  if (labelsToAdd.some(label => result.labelsToRemove.includes(label))) throw new Error('Inference response cannot remove the selected priority label')
   const duplicateIssueNumber = result.disposition === 'close-duplicate' ? result.relatedIssueNumbers[0] : undefined
   if (result.disposition === 'close-duplicate' && (result.relatedIssueNumbers.length !== 1 || !relatedIssues.data.items.some(item => item.number === duplicateIssueNumber))) {
     throw new Error('close-duplicate requires exactly one supplied related canonical issue number')
   }
-  const report = `| Field | Assessment |\n| --- | --- |\n| Status | ${tableCell(result.status)}. ${tableCell(result.statusReason)} |\n| Effort | ${tableCell(result.effort)}. ${tableCell(result.effortReason)} |\n| Functional area | ${tableCell(result.functionalArea)} |\n| Priority | ${tableCell(result.priority)}. ${tableCell(result.priorityReason)} |\n| Recommendation | ${tableCell(result.disposition)}. ${tableCell(result.dispositionReason)} |\n\n${result.comment}\n\n<!-- ${marker} -->`
+  const reportTable = `| Field | Assessment |\n| --- | --- |\n| Status | ${tableCell(result.status)}. ${tableCell(result.statusReason)} |\n| Effort | ${tableCell(result.effort)}. ${tableCell(result.effortReason)} |\n| Functional area | ${tableCell(result.functionalArea)} |\n| Priority | ${tableCell(result.priority)}. ${tableCell(result.priorityReason)} |\n| Details | ${tableCell(result.comment)} |`
+  const summaryTable = reportTable.replace('| Details |', `| Recommendation | ${tableCell(result.disposition)}. ${tableCell(result.dispositionReason)} |\n| Details |`)
+  const report = `${reportTable}\n\n*This action was performed automatically.*\n\n<!-- ${marker} -->`
   if (dryRun) {
-    core.info(`[dry-run] Would add labels: ${result.labelsToAdd.join(', ') || '(none)'}`)
+    core.info(`[dry-run] Would add labels: ${labelsToAdd.join(', ') || '(none)'}`)
     core.info(`[dry-run] Would remove labels: ${[...new Set([...result.labelsToRemove, triageLabel])].join(', ')}`)
-    core.info(`[dry-run] Would comment: ${report}`)
     core.info(`[dry-run] Would close: ${allowClose && closing}`)
+    await core.summary.addHeading(`Issue triage preview: #${issueNumber}`).addRaw(summaryTable).addRaw('\n\n*Dry run: no changes were applied.*').write()
     return
   }
-  if (allowLabelChanges && !closing && result.labelsToAdd.length) await octokit.rest.issues.addLabels({ owner, repo: repoName, issue_number: issueNumber, labels: result.labelsToAdd })
+  if (allowLabelChanges && labelsToAdd.length) await octokit.rest.issues.addLabels({ owner, repo: repoName, issue_number: issueNumber, labels: labelsToAdd })
   if (allowLabelChanges) {
     for (const label of result.labelsToRemove.filter(label => label !== triageLabel)) await octokit.rest.issues.removeLabel({ owner, repo: repoName, issue_number: issueNumber, name: label })
   }

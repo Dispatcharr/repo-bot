@@ -59,11 +59,11 @@ Use only a disposition listed in `Allowed disposition values`.
 - `related` remains open and should reference the overlapping issue in the notes.
 - When closure evidence is weak, use `keep-open` or `needs-experienced-contributor`.
 
-Only add or remove labels from `Repository labels`. Include the selected P1-P4 label only if that exact label exists. Do not add and remove the same label. When recommending a closing disposition, `labelsToAdd` must be an empty array. Do not remove `Triage`; the action controls its lifecycle after successful triage.
+Only add or remove labels from `Repository labels`. When the selected P1-P4 label exists and the issue remains open, include it in `labelsToAdd`. Do not add and remove the same label. When recommending a closing disposition, `labelsToAdd` must be an empty array. Do not remove `Triage`; the action controls its lifecycle after successful triage.
 
 # Comment Format
 
-The action, not you, renders the final bot comment. Populate the JSON fields so it produces exactly this format:
+The action, not you, renders the final bot comment. It consists only of this table, followed by its own automation notice. Put all reporter and maintainer detail in `comment`; the action renders it in the `Details` row. Do not put detail outside that row. The action uses `disposition` and `dispositionReason` for mutations and its dry-run workflow summary; they do not appear in the bot comment.
 
 ```markdown
 | Field | Assessment |
@@ -72,12 +72,10 @@ The action, not you, renders the final bot comment. Populate the JSON fields so 
 | Effort | <effort>. <effortReason> |
 | Functional area | <functionalArea> |
 | Priority | <priority>. <priorityReason> |
-| Recommendation | <disposition>. <dispositionReason> |
-
-<comment>
+| Details | <comment> |
 ```
 
-`comment` is the final notes paragraph. It must be a concise, factual explanation for the reporter and maintainers. Cite a supplied related issue, release, or missing information when relevant. It must not repeat the five formatted fields, use a heading, include HTML comments, contain commands, or make unsupported claims.
+`comment` is a concise, factual explanation for the reporter and maintainers. Cite a supplied related issue, release, or missing information when relevant. It must not repeat the five formatted fields, use a heading, include HTML comments, contain commands, or make unsupported claims.
 
 # JSON Requirements
 
