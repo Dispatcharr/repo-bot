@@ -111,12 +111,12 @@ async function collectRepositoryContext(
 ): Promise<Record<string, string>> {
   const { data: repository } = await octokit.rest.repos.get({ owner, repo })
   const branch = branchInput.trim() || repository.default_branch
-  if (files.length > 0) return readContextFiles(octokit, owner, repo, branch, files, maxBytes)
+  const explicitContexts = files.length > 0 ? await readContextFiles(octokit, owner, repo, branch, files, maxBytes) : {}
 
   const queryTerms = terms.split(' ').slice(0, 3)
   if (queryTerms.length === 0) {
-    core.warning(`No searchable issue terms for ${owner}/${repo}@${branch}; no repository context included`)
-    return {}
+    core.warning(`No searchable issue terms for ${owner}/${repo}@${branch}; no additional repository context included`)
+    return explicitContexts
   }
   try {
     const searches = await Promise.all(queryTerms.map(term => octokit.rest.search.code({
@@ -125,10 +125,10 @@ async function collectRepositoryContext(
     })))
     const paths = [...new Set(searches.flatMap(search => search.data.items.map(item => item.path)))].slice(0, maxFiles)
     core.info(`Found ${paths.length} repository context file(s) in ${owner}/${repo}@${branch}`)
-    return readContextFiles(octokit, owner, repo, branch, paths, maxBytes)
+    return { ...explicitContexts, ...await readContextFiles(octokit, owner, repo, branch, paths, maxBytes) }
   } catch (error) {
     core.warning(`Repository context search failed for ${owner}/${repo}@${branch}: ${(error as Error).message}`)
-    return {}
+    return explicitContexts
   }
 }
 

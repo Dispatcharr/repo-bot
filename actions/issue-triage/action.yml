@@ -72,7 +72,7 @@ inputs:
     required: false
     default: 'false'
   context-files:
-    description: "Comma-separated repository-relative text files to include as untrusted context. When blank, search context-branch for files relevant to the issue."
+    description: "Comma-separated repository-relative text files to include as untrusted context, in addition to issue-relevant code search results."
     required: false
     default: ''
   max-context-bytes:
