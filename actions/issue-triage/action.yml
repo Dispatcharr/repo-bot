@@ -99,6 +99,10 @@ inputs:
     description: "Maximum seconds to wait for each provider inference request."
     required: false
     default: '300'
+  inference-retries:
+    description: "Retries for transient provider failures such as rate limits and upstream overloads."
+    required: false
+    default: '2'
   dry-run:
     description: "Log validated triage changes without modifying GitHub state."
     required: false

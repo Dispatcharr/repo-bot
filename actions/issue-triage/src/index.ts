@@ -39,6 +39,12 @@ function parsePositiveInteger(input: string, name: string): number {
   return value
 }
 
+function parseNonNegativeInteger(input: string, name: string): number {
+  const value = Number(input)
+  if (!Number.isInteger(value) || value < 0) throw new Error(`${name} must be a non-negative whole number`)
+  return value
+}
+
 function hasLabel(labels: Array<string | { name?: string | null }>, name: string): boolean {
   return labels.some(label => (typeof label === 'string' ? label : label.name) === name)
 }
@@ -326,12 +332,29 @@ function isGitHubToken(value: string): boolean {
   return /^(gh[opsu]_\w+|github_pat_\w+)/.test(value)
 }
 
-async function requestInference(provider: Provider, key: string, model: string, baseUrl: string, cliPath: string, cliVersion: string, system: string, user: string, timeoutSeconds: number): Promise<unknown> {
-  if (provider === 'copilot') return requestCopilot(key, model, cliPath, cliVersion, system, user, timeoutSeconds)
-  if (provider === 'auto' && isGitHubToken(key)) return requestCopilot(key, model, cliPath, cliVersion, system, user, timeoutSeconds)
-  if (!key || !model) throw new Error('provider-key and provider-model are required for OpenAI-compatible inference')
-  if (provider === 'auto') core.info('provider-key is not a GitHub token; using the OpenAI-compatible fallback')
-  return requestOpenAi(baseUrl, key, model, system, user, timeoutSeconds)
+function isTransientInferenceError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error)
+  return /HTTP (429|5\d\d)|upstream error|provider returned error/i.test(message)
+}
+
+async function requestInference(provider: Provider, key: string, model: string, baseUrl: string, cliPath: string, cliVersion: string, system: string, user: string, timeoutSeconds: number, retries: number): Promise<unknown> {
+  const request = (): Promise<unknown> => {
+    if (provider === 'copilot') return requestCopilot(key, model, cliPath, cliVersion, system, user, timeoutSeconds)
+    if (provider === 'auto' && isGitHubToken(key)) return requestCopilot(key, model, cliPath, cliVersion, system, user, timeoutSeconds)
+    if (!key || !model) throw new Error('provider-key and provider-model are required for OpenAI-compatible inference')
+    if (provider === 'auto') core.info('provider-key is not a GitHub token; using the OpenAI-compatible fallback')
+    return requestOpenAi(baseUrl, key, model, system, user, timeoutSeconds)
+  }
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await request()
+    } catch (error) {
+      if (!isTransientInferenceError(error) || attempt === retries) throw error
+      const delay = 2 ** attempt * 2_000
+      core.warning(`Inference request failed transiently. Retrying in ${delay / 1_000}s (${attempt + 1}/${retries})`)
+      await new Promise(resolve => setTimeout(resolve, delay))
+    }
+  }
 }
 
 function validateResult(value: unknown, repositoryLabels: Set<string>, allowedDispositions: Set<string>, maxCommentLength: number, marker: string): TriageResult {
@@ -397,6 +420,7 @@ async function run(): Promise<void> {
   const maxRelatedIssues = parsePositiveInteger(core.getInput('max-related-issues'), 'max-related-issues')
   const maxCommentLength = parsePositiveInteger(core.getInput('max-comment-length'), 'max-comment-length')
   const inferenceTimeoutSeconds = parsePositiveInteger(core.getInput('inference-timeout-seconds'), 'inference-timeout-seconds')
+  const inferenceRetries = parseNonNegativeInteger(core.getInput('inference-retries'), 'inference-retries')
   const { eventName, payload, repo } = github.context
   if (eventName !== 'issues' || !payload.issue) return core.info('Issue Triage only runs on issue events')
   const eventAction = payload.action
@@ -444,7 +468,7 @@ async function run(): Promise<void> {
     relatedIssues: relatedIssues.data.items.filter(item => contextRepository.owner !== owner || contextRepository.repo !== repoName || item.number !== issueNumber).map((item, index) => ({ number: item.number, title: item.title, state: item.state, body: index < 3 ? truncateContext(item.body ?? '', 6_000) : undefined, labels: item.labels })),
     contextFiles,
     allowedDispositions: [...allowedDispositions],
-  }), inferenceTimeoutSeconds)
+  }), inferenceTimeoutSeconds, inferenceRetries)
   core.info(`Phase 2/2 complete in ${((Date.now() - triageStartedAt) / 1000).toFixed(1)}s. Validating model output`)
   const result = validateResult(inference, repositoryLabels, allowedDispositions, maxCommentLength, marker)
   core.info(`Validated triage for issue #${issueNumber}: ${JSON.stringify({ status: result.status, effort: result.effort, priority: result.priority, disposition: result.disposition, labelsToAdd: result.labelsToAdd, labelsToRemove: result.labelsToRemove, relatedIssueNumbers: result.relatedIssueNumbers })}`)
