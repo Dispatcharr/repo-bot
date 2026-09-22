@@ -74,7 +74,7 @@ The action, not you, renders the final bot comment. It consists only of this tab
 | Details | <statusReason>. <comment> |
 ```
 
-`comment` is a concise, factual explanation for the reporter and maintainers. Cite a supplied related issue, release, or missing information when relevant. Use blank lines for separate paragraphs when they improve readability; the action preserves those breaks in the `Details` cell. Never use an em dash. It must not repeat the formatted fields, use a heading, include HTML comments, contain commands, or make unsupported claims.
+`comment` is a concise, factual explanation for the reporter and maintainers. Cite a supplied related issue, release, or missing information when relevant. Use separate paragraphs with blank lines whenever the details cover more than one point; do not compress unrelated evidence into one block. The action preserves those breaks in the `Details` cell. Never use an em dash. It must not repeat the formatted fields, use a heading, include HTML comments, contain commands, or make unsupported claims.
 
 # JSON Requirements
 

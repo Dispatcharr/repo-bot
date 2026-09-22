@@ -250,7 +250,7 @@ For a safe first run, set `dry-run: true`, inspect the logs, then remove it. The
 
 ### issue-triage
 
-Uses a configured AI provider to assess an issue carrying a triage label. It first uses a constrained query-planning prompt plus deterministic issue terms to search for relevant code, then gathers the issue, comments, repository labels, related issue search results, and configured repository files. The model returns a validated recommendation only. The action, using the supplied GitHub App token, performs the allowed label, comment, and close changes.
+Uses a configured AI provider to assess an issue carrying a triage label. It uses deterministic issue terms to search for relevant code, then gathers the issue, comments, repository labels, related issue search results, and configured repository files. The model returns a validated recommendation only. The action, using the supplied GitHub App token, performs the allowed label, comment, and close changes.
 
 ```
 uses: Dispatcharr/repo-bot/actions/issue-triage@v1

@@ -68,12 +68,6 @@ function searchTerms(title: string, body: string | null): string[] {
     .slice(0, 3)
 }
 
-function contextSearchQueries(value: unknown): string[] {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Context search planner response must be a JSON object')
-  const queries = (value as Record<string, unknown>).queries
-  if (!Array.isArray(queries) || !queries.every(query => typeof query === 'string')) throw new Error('Context search planner queries must be a string array')
-  return [...new Set(queries.map(query => query.replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim()).filter(query => query.length >= 3).map(query => query.split(' ').slice(0, 6).join(' ')))].slice(0, 3)
-}
 
 function parseRepository(input: string, fallback: { owner: string, repo: string }): { owner: string, repo: string } {
   if (!input.trim()) return fallback
@@ -181,20 +175,6 @@ async function collectRepositoryContext(
   } catch (error) {
     core.warning(`Repository context search failed for ${owner}/${repo}@${branch}: ${(error as Error).message}`)
     return explicit.contexts
-  }
-}
-
-async function planContextQueries(provider: Provider, key: string, model: string, baseUrl: string, cliPath: string, cliVersion: string, issue: unknown, comments: unknown, timeoutSeconds: number): Promise<string[]> {
-  try {
-    const startedAt = Date.now()
-    core.info('Phase 1/3: planning targeted code-search queries with prompts/context-search.md')
-    const prompt = await readFile(resolve(__dirname, '..', 'prompts', 'context-search.md'), 'utf8')
-    const queries = contextSearchQueries(await requestInference(provider, key, model, baseUrl, cliPath, cliVersion, prompt, `${quoteEvidence('issue', issue)}\n\n${quoteEvidence('issue-comments', comments)}`, timeoutSeconds))
-    core.info(`Phase 1/3 complete in ${((Date.now() - startedAt) / 1000).toFixed(1)}s. Planned ${queries.length} targeted code-search query(s): ${queries.join(', ') || '(none)'}`)
-    return queries
-  } catch (error) {
-    core.warning(`Context search planner failed; using deterministic fallback only: ${(error as Error).message}`)
-    return []
   }
 }
 
@@ -429,16 +409,14 @@ async function run(): Promise<void> {
   if (bypassForMembers && issue.user?.login && await isCollaborator(octokit, owner, repoName, issue.user.login)) return core.info(`Skipping collaborator issue #${issueNumber}`)
   const comments = await octokit.paginate(octokit.rest.issues.listComments, { owner, repo: repoName, issue_number: issueNumber, per_page: 100 })
   if (!allowRetriage && comments.some(comment => markerComment(comment, marker, botLogin))) return core.info(`Issue #${issueNumber} was already triaged by this bot`)
-  const deterministicQueries = searchTerms(issue.title, issue.body ?? null)
-  const plannedQueries = await planContextQueries(provider, core.getInput('provider-key'), core.getInput('provider-model'), core.getInput('provider-base-url'), core.getInput('copilot-cli-path'), core.getInput('copilot-cli-version'), { title: issue.title, body: issue.body }, comments.map(comment => ({ author: comment.user?.login, body: comment.body })), inferenceTimeoutSeconds)
-  const contextQueries = [...new Set([...plannedQueries.slice(0, 2), ...deterministicQueries.slice(0, 2)])]
-  core.info(`Using ${contextQueries.length} total code-search query(s), including deterministic fallback: ${contextQueries.join(', ') || '(none)'}`)
+  const contextQueries = searchTerms(issue.title, issue.body ?? null).slice(0, 3)
+  core.info(`Using ${contextQueries.length} deterministic code-search query(s): ${contextQueries.join(', ') || '(none)'}`)
 
   const contextStartedAt = Date.now()
-  core.info('Phase 2/3: collecting labels, related issues, configured files, and code context')
+  core.info('Phase 1/2: collecting labels, related issues, configured files, and code context')
   const [labels, relatedIssues, contextFiles, prompt] = await Promise.all([
     octokit.paginate(octokit.rest.issues.listLabelsForRepo, { owner, repo: repoName, per_page: 100 }),
-    octokit.rest.search.issuesAndPullRequests({ q: `repo:${contextRepository.owner}/${contextRepository.repo} is:issue ${deterministicQueries.join(' ')}`, per_page: maxRelatedIssues }),
+    octokit.rest.search.issuesAndPullRequests({ q: `repo:${contextRepository.owner}/${contextRepository.repo} is:issue ${contextQueries.join(' ')}`, per_page: maxRelatedIssues }),
     collectRepositoryContext(
       octokit,
       contextRepository.owner,
@@ -453,9 +431,9 @@ async function run(): Promise<void> {
     readPrompt(core.getInput('prompt-file')),
   ])
   const repositoryLabels = new Set(labels.map(label => label.name))
-  core.info(`Phase 2/3 complete in ${((Date.now() - contextStartedAt) / 1000).toFixed(1)}s. Collected ${Object.keys(contextFiles).length} context file(s), ${relatedIssues.data.items.length} related issue candidate(s), and ${repositoryLabels.size} label(s)`)
+  core.info(`Phase 1/2 complete in ${((Date.now() - contextStartedAt) / 1000).toFixed(1)}s. Collected ${Object.keys(contextFiles).length} context file(s), ${relatedIssues.data.items.length} related issue candidate(s), and ${repositoryLabels.size} label(s)`)
   const triageStartedAt = Date.now()
-  core.info('Phase 3/3: requesting the triage assessment with prompts/triage.md')
+  core.info('Phase 2/2: requesting the triage assessment with prompts/triage.md')
   const inference = await requestInference(provider, core.getInput('provider-key'), core.getInput('provider-model'), core.getInput('provider-base-url'), core.getInput('copilot-cli-path'), core.getInput('copilot-cli-version'), prompt, userPrompt({
     issue: { number: issue.number, title: issue.title, body: issue.body, createdAt: issue.created_at, updatedAt: issue.updated_at, labels: issue.labels.map(label => typeof label === 'string' ? label : label.name) },
     comments: comments.map(comment => ({ author: comment.user?.login, createdAt: comment.created_at, body: comment.body })),
@@ -464,7 +442,7 @@ async function run(): Promise<void> {
     contextFiles,
     allowedDispositions: [...allowedDispositions],
   }), inferenceTimeoutSeconds)
-  core.info(`Phase 3/3 complete in ${((Date.now() - triageStartedAt) / 1000).toFixed(1)}s. Validating model output`)
+  core.info(`Phase 2/2 complete in ${((Date.now() - triageStartedAt) / 1000).toFixed(1)}s. Validating model output`)
   const result = validateResult(inference, repositoryLabels, allowedDispositions, maxCommentLength, marker)
   core.info(`Validated triage for issue #${issueNumber}: ${JSON.stringify({ status: result.status, effort: result.effort, priority: result.priority, disposition: result.disposition, labelsToAdd: result.labelsToAdd, labelsToRemove: result.labelsToRemove, relatedIssueNumbers: result.relatedIssueNumbers })}`)
 
@@ -478,7 +456,7 @@ async function run(): Promise<void> {
   if (result.disposition === 'close-duplicate' && (result.relatedIssueNumbers.length !== 1 || !relatedIssues.data.items.some(item => item.number === duplicateIssueNumber))) {
     throw new Error('close-duplicate requires exactly one supplied related canonical issue number')
   }
-  const details = `${result.statusReason} ${result.comment}`
+  const details = `${result.statusReason}\n\n${result.comment}`
   const reportTable = `| | |\n| --- | --- |\n| Effort | ${tableCell(result.effort)}. ${tableCell(result.effortReason)} |\n| Functional area | ${tableCell(result.functionalArea)} |\n| Priority | ${tableCell(result.priority)}. ${tableCell(result.priorityReason)} |\n| Details | ${tableCell(details)} |`
   const summaryTable = [
     [{ data: '', header: true }, { data: '', header: true }],
