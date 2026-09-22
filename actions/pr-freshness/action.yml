@@ -5,6 +5,9 @@ inputs:
   github-token:
     description: 'Bot installation token with Pull requests and Issues read/write permission'
     required: true
+  marker-author:
+    description: 'GitHub login allowed to own freshness marker comments'
+    required: true
   days-before-stale:
     description: 'Whole days of PR author inactivity before warning is posted'
     required: true
