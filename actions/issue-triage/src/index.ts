@@ -190,7 +190,9 @@ async function runCommand(command: string, args: string[], env: NodeJS.ProcessEn
   return new Promise<string>((resolveOutput, reject) => {
     const child = spawn(command, args, { env, stdio: ['ignore', 'pipe', 'pipe'] })
     let stdout = ''
+    let stderr = ''
     child.stdout.on('data', chunk => { stdout += chunk.toString() })
+    child.stderr.on('data', chunk => { stderr += chunk.toString() })
     const timeout = setTimeout(() => child.kill(), timeoutMs)
     child.once('error', error => {
       clearTimeout(timeout)
@@ -198,7 +200,7 @@ async function runCommand(command: string, args: string[], env: NodeJS.ProcessEn
     })
     child.once('close', code => {
       clearTimeout(timeout)
-      if (code !== 0) reject(new Error(`${command} failed with exit code ${code ?? 'unknown'}`))
+      if (code !== 0) reject(new Error(`${command} failed with exit code ${code ?? 'unknown'}: ${stderr.trim().slice(0, 2000)}`))
       else resolveOutput(stdout)
     })
   })
@@ -225,15 +227,20 @@ async function copilotCliPath(configuredPath: string, version: string): Promise<
 async function requestCopilot(token: string, model: string, configuredCliPath: string, cliVersion: string, system: string, user: string): Promise<unknown> {
   if (!token) throw new Error('provider-key must be the workflow GITHUB_TOKEN when provider is copilot')
   const prompt = `${system}\n\n${user}`
-  const output = await runCommand(await copilotCliPath(configuredCliPath, cliVersion), [
-      '--prompt', prompt,
-      '--model', model || 'auto',
-      '--deny-tool=shell',
-      '--deny-tool=write',
-    ],
-    // Installation tokens are accepted only through the CLI runtime environment.
-    { ...process.env, COPILOT_GITHUB_TOKEN: token, GH_TOKEN: undefined, GITHUB_TOKEN: undefined },
-    120_000)
+  let output: string
+  try {
+    output = await runCommand(await copilotCliPath(configuredCliPath, cliVersion), [
+        '--prompt', prompt,
+        '--model', model || 'auto',
+        '--deny-tool=shell',
+        '--deny-tool=write',
+      ],
+      // Installation tokens are accepted only through the CLI runtime environment.
+      { ...process.env, COPILOT_GITHUB_TOKEN: token, GH_TOKEN: undefined, GITHUB_TOKEN: undefined },
+      120_000)
+  } catch (error) {
+    throw new Error((error as Error).message.split(token).join('***'))
+  }
   try {
     return JSON.parse(output)
   } catch {
