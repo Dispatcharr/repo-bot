@@ -9,6 +9,7 @@ const VALID_STATUSES = ['still-an-issue', 'fixed-released', 'fixed-unreleased', 
 const VALID_EFFORTS = ['trivial', 'small', 'medium', 'large'] as const
 const VALID_PRIORITIES = ['P1', 'P2', 'P3', 'P4'] as const
 const CLOSING_DISPOSITIONS = new Set(['close-completed', 'close-duplicate', 'close-not-planned', 'close-invalid', 'close-wontfix', 'close-stale', 'working-as-designed'])
+const ISSUE_TYPE_LABELS = new Set(['Bug', 'Feature Request'])
 
 type Provider = typeof VALID_PROVIDERS[number]
 type Octokit = ReturnType<typeof github.getOctokit>
@@ -361,10 +362,11 @@ async function run(): Promise<void> {
   core.info(`Validated triage for issue #${issueNumber}: ${JSON.stringify({ status: result.status, effort: result.effort, priority: result.priority, disposition: result.disposition, labelsToAdd: result.labelsToAdd, labelsToRemove: result.labelsToRemove, relatedIssueNumbers: result.relatedIssueNumbers })}`)
 
   const closing = CLOSING_DISPOSITIONS.has(result.disposition)
-  const labelsToAdd = !closing && repositoryLabels.has(result.priority)
-    ? [...new Set([...result.labelsToAdd, result.priority])]
-    : result.labelsToAdd
-  if (labelsToAdd.some(label => result.labelsToRemove.includes(label))) throw new Error('Inference response cannot remove the selected priority label')
+  const automaticLabels = [result.priority, `Area: ${result.functionalArea}`].filter(label => repositoryLabels.has(label))
+  const labelsToAdd = closing
+    ? []
+    : [...new Set([...result.labelsToAdd.filter(label => !ISSUE_TYPE_LABELS.has(label)), ...automaticLabels])]
+  if (labelsToAdd.some(label => result.labelsToRemove.includes(label))) throw new Error('Inference response cannot remove a selected priority or functional-area label')
   const duplicateIssueNumber = result.disposition === 'close-duplicate' ? result.relatedIssueNumbers[0] : undefined
   if (result.disposition === 'close-duplicate' && (result.relatedIssueNumbers.length !== 1 || !relatedIssues.data.items.some(item => item.number === duplicateIssueNumber))) {
     throw new Error('close-duplicate requires exactly one supplied related canonical issue number')

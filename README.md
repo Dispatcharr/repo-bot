@@ -287,7 +287,7 @@ uses: Dispatcharr/repo-bot/actions/issue-triage@v1
 
 After successful processing, the action always removes the trigger label.
 
-Issue bodies, comments, related issues, and context files are untrusted evidence. They are tagged as untrusted in the prompt, cannot issue GitHub API operations, and model output must pass local schema and repository-label validation before the action mutates GitHub state. Every completed triage posts a table-only bot comment with its assessment, estimated effort, functional area, priority, supporting details, and an automation notice. The recommendation appears only in the dry-run workflow summary. Open issues automatically receive their selected P1-P4 label when that label exists.
+Issue bodies, comments, related issues, and context files are untrusted evidence. They are tagged as untrusted in the prompt, cannot issue GitHub API operations, and model output must pass local schema and repository-label validation before the action mutates GitHub state. Every completed triage posts a table-only bot comment with its assessment, estimated effort, functional area, priority, supporting details, and an automation notice. The recommendation appears only in the dry-run workflow summary. Open issues automatically receive their selected P1-P4 and matching `Area:` labels when those labels exist. `Bug` and `Feature Request` labels are not applied because GitHub issue types classify them.
 
 #### Usage
 

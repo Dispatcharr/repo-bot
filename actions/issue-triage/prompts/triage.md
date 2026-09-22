@@ -46,7 +46,7 @@ Choose exactly one `priority`:
 - `P3`: Minor or cosmetic impact, or a practical workaround exists.
 - `P4`: Low-impact, nice-to-have, or edge-case work.
 
-Set `functionalArea` to the affected component or subsystem. Use `Unclear` when the evidence does not identify one. Do not make up an `Area:` label merely because `functionalArea` is known.
+Set `functionalArea` to the suffix of the matching `Area: <component>` label in `Repository labels`. Use `Unclear` when no area label matches the evidence.
 
 # Disposition And Labels
 
@@ -59,7 +59,7 @@ Use only a disposition listed in `Allowed disposition values`.
 - `related` remains open and should reference the overlapping issue in the notes.
 - When closure evidence is weak, use `keep-open` or `needs-experienced-contributor`.
 
-Only add or remove labels from `Repository labels`. When the selected P1-P4 label exists and the issue remains open, include it in `labelsToAdd`. Do not add and remove the same label. When recommending a closing disposition, `labelsToAdd` must be an empty array. Do not remove `Triage`; the action controls its lifecycle after successful triage.
+Only add or remove labels from `Repository labels`. When the selected P1-P4 label and matching `Area: <functionalArea>` label exist and the issue remains open, include them in `labelsToAdd`. Do not add `Bug` or `Feature Request`; GitHub issue types classify those. Do not add and remove the same label. When recommending a closing disposition, `labelsToAdd` must be an empty array. Do not remove `Triage`; the action controls its lifecycle after successful triage.
 
 # Comment Format
 
