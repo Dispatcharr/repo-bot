@@ -63,10 +63,10 @@ Only add or remove labels from `Repository labels`. When the selected P1-P4 labe
 
 # Comment Format
 
-The action, not you, renders the final bot comment. It consists only of this table, followed by its own automation notice. Put all reporter and maintainer detail in `comment`; the action renders it in the `Details` row. Do not put detail outside that row. The action uses `disposition` and `dispositionReason` for mutations and its dry-run workflow summary; they do not appear in the bot comment.
+The action, not you, renders the final bot comment. It consists only of this table. Put all reporter and maintainer detail in `comment`; the action renders it in the `Details` row. Do not put detail outside that row. The action uses `disposition` and `dispositionReason` for mutations and its dry-run workflow summary; they do not appear in the bot comment.
 
 ```markdown
-| Field | Assessment |
+| | |
 | --- | --- |
 | Effort | <effort>. <effortReason> |
 | Functional area | <functionalArea> |
@@ -74,7 +74,7 @@ The action, not you, renders the final bot comment. It consists only of this tab
 | Details | <statusReason>. <comment> |
 ```
 
-`comment` is a concise, factual explanation for the reporter and maintainers. Cite a supplied related issue, release, or missing information when relevant. It must not repeat the five formatted fields, use a heading, include HTML comments, contain commands, or make unsupported claims.
+`comment` is a concise, factual explanation for the reporter and maintainers. Cite a supplied related issue, release, or missing information when relevant. Use blank lines for separate paragraphs when they improve readability; the action preserves those breaks in the `Details` cell. Never use an em dash. It must not repeat the formatted fields, use a heading, include HTML comments, contain commands, or make unsupported claims.
 
 # JSON Requirements
 
