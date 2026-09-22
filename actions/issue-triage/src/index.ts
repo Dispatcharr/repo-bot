@@ -478,10 +478,18 @@ async function run(): Promise<void> {
   if (result.disposition === 'close-duplicate' && (result.relatedIssueNumbers.length !== 1 || !relatedIssues.data.items.some(item => item.number === duplicateIssueNumber))) {
     throw new Error('close-duplicate requires exactly one supplied related canonical issue number')
   }
-  const reportTable = `| Field | Assessment |\n| --- | --- |\n| Status | ${tableCell(result.status)}. ${tableCell(result.statusReason)} |\n| Effort | ${tableCell(result.effort)}. ${tableCell(result.effortReason)} |\n| Functional area | ${tableCell(result.functionalArea)} |\n| Priority | ${tableCell(result.priority)}. ${tableCell(result.priorityReason)} |\n| Details | ${tableCell(result.comment)} |`
-  const summaryTable = reportTable.replace('| Details |', `| Recommendation | ${tableCell(result.disposition)}. ${tableCell(result.dispositionReason)} |\n| Details |`)
+  const details = `${result.statusReason} ${result.comment}`
+  const reportTable = `| Field | Assessment |\n| --- | --- |\n| Effort | ${tableCell(result.effort)}. ${tableCell(result.effortReason)} |\n| Functional area | ${tableCell(result.functionalArea)} |\n| Priority | ${tableCell(result.priority)}. ${tableCell(result.priorityReason)} |\n| Details | ${tableCell(details)} |`
+  const summaryTable = [
+    [{ data: 'Field', header: true }, { data: 'Assessment', header: true }],
+    ['Effort', `${result.effort}. ${result.effortReason}`],
+    ['Functional area', result.functionalArea],
+    ['Priority', `${result.priority}. ${result.priorityReason}`],
+    ['Recommendation', `${result.disposition}. ${result.dispositionReason}`],
+    ['Details', details],
+  ]
   const report = `${reportTable}\n\n*This action was performed automatically.*\n\n<!-- ${marker} -->`
-  await core.summary.addHeading(`Issue triage: #${issueNumber}`).addRaw(summaryTable).addRaw(dryRun ? '\n\n*Dry run: no changes were applied.*' : '\n\n*This action was performed automatically.*').write()
+  await core.summary.addHeading(`Issue triage: #${issueNumber}`).addTable(summaryTable).addRaw(dryRun ? '\n\n*Dry run: no changes were applied.*' : '\n\n*This action was performed automatically.*').write()
   if (dryRun) {
     core.info(`[dry-run] Would add labels: ${labelsToAdd.join(', ') || '(none)'}`)
     core.info(`[dry-run] Would remove labels: ${[...new Set([...result.labelsToRemove, triageLabel])].join(', ')}`)

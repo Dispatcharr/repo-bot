@@ -68,11 +68,10 @@ The action, not you, renders the final bot comment. It consists only of this tab
 ```markdown
 | Field | Assessment |
 | --- | --- |
-| Status | <status>. <statusReason> |
 | Effort | <effort>. <effortReason> |
 | Functional area | <functionalArea> |
 | Priority | <priority>. <priorityReason> |
-| Details | <comment> |
+| Details | <statusReason>. <comment> |
 ```
 
 `comment` is a concise, factual explanation for the reporter and maintainers. Cite a supplied related issue, release, or missing information when relevant. It must not repeat the five formatted fields, use a heading, include HTML comments, contain commands, or make unsupported claims.
