@@ -276,7 +276,6 @@ uses: Dispatcharr/repo-bot/actions/issue-triage@v1
 | `allowed-dispositions` | no | built-in list | Comma-separated dispositions permitted for model output. |
 | `allow-label-changes` | no | `true` | Apply validated label additions and removals. |
 | `allow-close` | no | `true` | Close issues for an allowed closing disposition. |
-| `remove-triage-label` | no | `true` | Remove the trigger label after successful processing. |
 | `bypass-for-members` | no | `false` | Skip issues opened by repository collaborators. |
 | `context-files` | no | empty | Comma-separated repository-relative text files read from `context-repository`. When empty, the action searches the selected branch for files matching issue-derived terms. |
 | `max-context-bytes` | no | `40000` | Maximum bytes read from each context file. |
@@ -284,6 +283,8 @@ uses: Dispatcharr/repo-bot/actions/issue-triage@v1
 | `max-related-issues` | no | `10` | Maximum related issue search results supplied to the model. |
 | `max-comment-length` | no | `4000` | Maximum model-provided report length. |
 | `dry-run` | no | `false` | Log validated changes without modifying GitHub state. |
+
+After successful processing, the action always removes the trigger label.
 
 Issue bodies, comments, related issues, and context files are untrusted evidence. They are tagged as untrusted in the prompt, cannot issue GitHub API operations, and model output must pass local schema and repository-label validation before the action mutates GitHub state. Every completed triage posts a bot comment with its assessment, estimated effort, functional area, priority, recommendation, and supporting notes.
 

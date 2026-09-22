@@ -63,10 +63,6 @@ inputs:
     description: "Close issues when the validated disposition is a closing disposition."
     required: false
     default: 'true'
-  remove-triage-label:
-    description: "Remove triage-label after all enabled triage mutations succeed."
-    required: false
-    default: 'true'
   bypass-for-members:
     description: "Skip issues opened by repository collaborators."
     required: false

@@ -311,7 +311,6 @@ async function run(): Promise<void> {
   if (allowedDispositions.size === 0) throw new Error('allowed-dispositions must not be empty')
   const allowLabelChanges = core.getBooleanInput('allow-label-changes')
   const allowClose = core.getBooleanInput('allow-close')
-  const removeTriageLabel = core.getBooleanInput('remove-triage-label')
   const bypassForMembers = core.getBooleanInput('bypass-for-members')
   const dryRun = core.getBooleanInput('dry-run')
   const maxContextBytes = parsePositiveInteger(core.getInput('max-context-bytes'), 'max-context-bytes')
@@ -368,14 +367,14 @@ async function run(): Promise<void> {
   const report = `| Field | Assessment |\n| --- | --- |\n| Status | ${tableCell(result.status)}. ${tableCell(result.statusReason)} |\n| Effort | ${tableCell(result.effort)}. ${tableCell(result.effortReason)} |\n| Functional area | ${tableCell(result.functionalArea)} |\n| Priority | ${tableCell(result.priority)}. ${tableCell(result.priorityReason)} |\n| Recommendation | ${tableCell(result.disposition)}. ${tableCell(result.dispositionReason)} |\n\n${result.comment}\n\n<!-- ${marker} -->`
   if (dryRun) {
     core.info(`[dry-run] Would add labels: ${result.labelsToAdd.join(', ') || '(none)'}`)
-    core.info(`[dry-run] Would remove labels: ${result.labelsToRemove.join(', ') || '(none)'}${removeTriageLabel ? `, ${triageLabel}` : ''}`)
+    core.info(`[dry-run] Would remove labels: ${[...new Set([...result.labelsToRemove, triageLabel])].join(', ')}`)
     core.info(`[dry-run] Would comment: ${report}`)
     core.info(`[dry-run] Would close: ${allowClose && closing}`)
     return
   }
   if (allowLabelChanges && !closing && result.labelsToAdd.length) await octokit.rest.issues.addLabels({ owner, repo: repoName, issue_number: issueNumber, labels: result.labelsToAdd })
   if (allowLabelChanges) {
-    for (const label of result.labelsToRemove) await octokit.rest.issues.removeLabel({ owner, repo: repoName, issue_number: issueNumber, name: label })
+    for (const label of result.labelsToRemove.filter(label => label !== triageLabel)) await octokit.rest.issues.removeLabel({ owner, repo: repoName, issue_number: issueNumber, name: label })
   }
   await octokit.rest.issues.createComment({ owner, repo: repoName, issue_number: issueNumber, body: report })
   if (allowClose && closing) {
@@ -387,7 +386,7 @@ async function run(): Promise<void> {
       await octokit.rest.issues.update({ owner, repo: repoName, issue_number: issueNumber, state: 'closed', state_reason: result.disposition === 'close-completed' ? 'completed' : 'not_planned' })
     }
   }
-  if (removeTriageLabel) await octokit.rest.issues.removeLabel({ owner, repo: repoName, issue_number: issueNumber, name: triageLabel })
+  await octokit.rest.issues.removeLabel({ owner, repo: repoName, issue_number: issueNumber, name: triageLabel })
   core.info(`Applied triage to issue #${issueNumber}`)
 }
 
