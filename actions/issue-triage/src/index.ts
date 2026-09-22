@@ -145,10 +145,11 @@ async function collectRepositoryContext(
 
 async function planContextQueries(provider: Provider, key: string, model: string, baseUrl: string, cliPath: string, cliVersion: string, issue: unknown, comments: unknown): Promise<string[]> {
   try {
-    core.info('Planning targeted code-search queries from issue evidence')
+    const startedAt = Date.now()
+    core.info('Phase 1/3: planning targeted code-search queries with prompts/context-search.md')
     const prompt = await readFile(resolve(__dirname, '..', 'prompts', 'context-search.md'), 'utf8')
     const queries = contextSearchQueries(await requestInference(provider, key, model, baseUrl, cliPath, cliVersion, prompt, `${quoteEvidence('issue', issue)}\n\n${quoteEvidence('issue-comments', comments)}`))
-    core.info(`Planned ${queries.length} targeted code-search query(s): ${queries.join(', ') || '(none)'}`)
+    core.info(`Phase 1/3 complete in ${((Date.now() - startedAt) / 1000).toFixed(1)}s. Planned ${queries.length} targeted code-search query(s): ${queries.join(', ') || '(none)'}`)
     return queries
   } catch (error) {
     core.warning(`Context search planner failed; using deterministic fallback only: ${(error as Error).message}`)
@@ -188,25 +189,53 @@ async function readPrompt(promptFile: string): Promise<string> {
   return readFile(path, 'utf8')
 }
 
+function redactError(value: string): string {
+  return value
+    .replace(/Bearer\s+\S+/gi, 'Bearer [redacted]')
+    .replace(/\b(?:sk-or-v1|sk)-[A-Za-z0-9_-]+/g, '[redacted]')
+    .slice(0, 1_000)
+}
+
 async function requestOpenAi(baseUrl: string, key: string, model: string, system: string, user: string): Promise<unknown> {
-  const response = await fetch(`${baseUrl.replace(/\/$/, '')}/chat/completions`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model,
-      messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
-      response_format: { type: 'json_object' },
-      temperature: 0,
-    }),
-  })
-  if (!response.ok) throw new Error(`Inference request failed with HTTP ${response.status}`)
-  const payload = await response.json() as { choices?: Array<{ message?: { content?: string } }> }
-  const content = payload.choices?.[0]?.message?.content
-  if (!content) throw new Error('Inference response did not contain a message')
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 120_000)
   try {
-    return JSON.parse(content)
-  } catch {
-    throw new Error('Inference response was not valid JSON')
+    const response = await fetch(`${baseUrl.replace(/\/$/, '')}/chat/completions`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model,
+        messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
+        response_format: { type: 'json_object' },
+        temperature: 0,
+      }),
+      signal: controller.signal,
+    })
+    if (!response.ok) {
+      const body = await response.text()
+      let message = body
+      try {
+        const error = JSON.parse(body) as { error?: { message?: string } }
+        message = error.error?.message || body
+      } catch {
+        // Some OpenAI-compatible providers return non-JSON error responses.
+      }
+      const requestId = response.headers.get('x-request-id')
+      throw new Error(`Inference request failed with HTTP ${response.status}${requestId ? ` (request ${requestId})` : ''}: ${redactError(message)}`)
+    }
+    const payload = await response.json() as { choices?: Array<{ message?: { content?: string } }> }
+    const content = payload.choices?.[0]?.message?.content
+    if (!content) throw new Error('Inference response did not contain a message')
+    try {
+      return JSON.parse(content)
+    } catch {
+      throw new Error('Inference response was not valid JSON')
+    }
+  } catch (error) {
+    if (controller.signal.aborted) throw new Error('Inference request timed out after 120 seconds')
+    throw error
+  } finally {
+    clearTimeout(timeout)
   }
 }
 
@@ -362,6 +391,8 @@ async function run(): Promise<void> {
   const contextQueries = [...new Set([...plannedQueries, ...deterministicQueries])]
   core.info(`Using ${contextQueries.length} total code-search query(s), including deterministic fallback: ${contextQueries.join(', ') || '(none)'}`)
 
+  const contextStartedAt = Date.now()
+  core.info('Phase 2/3: collecting labels, related issues, configured files, and code context')
   const [labels, relatedIssues, contextFiles, prompt] = await Promise.all([
     octokit.paginate(octokit.rest.issues.listLabelsForRepo, { owner, repo: repoName, per_page: 100 }),
     octokit.rest.search.issuesAndPullRequests({ q: `repo:${contextRepository.owner}/${contextRepository.repo} is:issue ${deterministicQueries.join(' ')}`, per_page: maxRelatedIssues }),
@@ -378,14 +409,19 @@ async function run(): Promise<void> {
     readPrompt(core.getInput('prompt-file')),
   ])
   const repositoryLabels = new Set(labels.map(label => label.name))
-  const result = validateResult(await requestInference(provider, core.getInput('provider-key'), core.getInput('provider-model'), core.getInput('provider-base-url'), core.getInput('copilot-cli-path'), core.getInput('copilot-cli-version'), prompt, userPrompt({
+  core.info(`Phase 2/3 complete in ${((Date.now() - contextStartedAt) / 1000).toFixed(1)}s. Collected ${Object.keys(contextFiles).length} context file(s), ${relatedIssues.data.items.length} related issue candidate(s), and ${repositoryLabels.size} label(s)`)
+  const triageStartedAt = Date.now()
+  core.info('Phase 3/3: requesting the triage assessment with prompts/triage.md')
+  const inference = await requestInference(provider, core.getInput('provider-key'), core.getInput('provider-model'), core.getInput('provider-base-url'), core.getInput('copilot-cli-path'), core.getInput('copilot-cli-version'), prompt, userPrompt({
     issue: { number: issue.number, title: issue.title, body: issue.body, createdAt: issue.created_at, updatedAt: issue.updated_at, labels: issue.labels.map(label => typeof label === 'string' ? label : label.name) },
     comments: comments.map(comment => ({ author: comment.user?.login, createdAt: comment.created_at, body: comment.body })),
     labels: [...repositoryLabels],
     relatedIssues: relatedIssues.data.items.filter(item => contextRepository.owner !== owner || contextRepository.repo !== repoName || item.number !== issueNumber).map(item => ({ number: item.number, title: item.title, state: item.state, body: item.body, labels: item.labels })),
     contextFiles,
     allowedDispositions: [...allowedDispositions],
-  })), repositoryLabels, allowedDispositions, maxCommentLength, marker)
+  }))
+  core.info(`Phase 3/3 complete in ${((Date.now() - triageStartedAt) / 1000).toFixed(1)}s. Validating model output`)
+  const result = validateResult(inference, repositoryLabels, allowedDispositions, maxCommentLength, marker)
   core.info(`Validated triage for issue #${issueNumber}: ${JSON.stringify({ status: result.status, effort: result.effort, priority: result.priority, disposition: result.disposition, labelsToAdd: result.labelsToAdd, labelsToRemove: result.labelsToRemove, relatedIssueNumbers: result.relatedIssueNumbers })}`)
 
   const closing = CLOSING_DISPOSITIONS.has(result.disposition)
