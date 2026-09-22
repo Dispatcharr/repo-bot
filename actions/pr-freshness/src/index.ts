@@ -38,9 +38,9 @@ function hasLabel(labels: Array<{ name?: string }>, label: string): boolean {
 function isOwnedMarkerComment(
   comment: { body?: string | null, user?: { login?: string | null } | null },
   marker: string,
-  botLogin: string,
+  markerAuthor: string,
 ): boolean {
-  return comment.user?.login === botLogin && comment.body?.includes(marker) === true
+  return comment.user?.login === markerAuthor && comment.body?.includes(marker) === true
 }
 
 function daysSince(date: string | Date, now: Date): number {
@@ -226,6 +226,7 @@ async function deleteComment(
 
 async function run(): Promise<void> {
   const token = core.getInput('github-token', { required: true })
+  const markerAuthor = core.getInput('marker-author', { required: true })
   const staleLabel = core.getInput('stale-label') || 'stale'
   const staleMessage = core.getInput('stale-message') || DEFAULT_STALE_MESSAGE
   const closeMessage = core.getInput('close-message') || DEFAULT_CLOSE_MESSAGE
@@ -268,8 +269,6 @@ async function run(): Promise<void> {
 
   const octokit = github.getOctokit(token)
   const { owner, repo } = github.context.repo
-  const { data: authenticatedUser } = await octokit.rest.users.getAuthenticated()
-  const botLogin = authenticatedUser.login
   const now = new Date()
   const collaboratorCache = new Map<string, boolean>()
   const pullRequests = await octokit.paginate(octokit.rest.pulls.list, {
@@ -309,10 +308,10 @@ async function run(): Promise<void> {
       per_page: 100,
     })
     const conflictMarker = [...comments].reverse().find(comment =>
-      isOwnedMarkerComment(comment, CONFLICT_MARKER, botLogin),
+      isOwnedMarkerComment(comment, CONFLICT_MARKER, markerAuthor),
     )
     const complianceComment = checkCompliance
-      ? [...comments].reverse().find(comment => isOwnedMarkerComment(comment, complianceMarker, botLogin))
+      ? [...comments].reverse().find(comment => isOwnedMarkerComment(comment, complianceMarker, markerAuthor))
       : undefined
     let conflictObservedAt = conflictMarker?.created_at ? new Date(conflictMarker.created_at) : null
     if (conflicted && !conflictObservedAt) {
@@ -361,7 +360,7 @@ async function run(): Promise<void> {
       .map(reason => daysSince(reason.eligibleSince, now)))
     const stale = hasLabel(pr.labels, staleLabel)
     const warning = [...comments].reverse().find(comment =>
-      isOwnedMarkerComment(comment, WARNING_MARKER, botLogin),
+      isOwnedMarkerComment(comment, WARNING_MARKER, markerAuthor),
     )
 
     if (stale) {
@@ -398,7 +397,7 @@ async function run(): Promise<void> {
         continue
       }
       const alreadyEnforced = comments.some(comment =>
-        isOwnedMarkerComment(comment, ENFORCED_MARKER, botLogin) && isAfter(comment.created_at, warnedAt),
+        isOwnedMarkerComment(comment, ENFORCED_MARKER, markerAuthor) && isAfter(comment.created_at, warnedAt),
       )
       if (alreadyEnforced) {
         core.info(`PR #${prNumber} was already enforced for its current warning`)
