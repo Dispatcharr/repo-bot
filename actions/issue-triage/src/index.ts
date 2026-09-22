@@ -508,9 +508,14 @@ async function run(): Promise<void> {
   await octokit.rest.issues.createComment({ owner, repo: repoName, issue_number: issueNumber, body: report })
   if (allowClose && closing) {
     if (duplicateIssueNumber) {
-      const { data: duplicateIssue } = await octokit.rest.issues.get({ owner: contextRepository.owner, repo: contextRepository.repo, issue_number: duplicateIssueNumber })
-      const updateDuplicate = octokit.request as unknown as (route: string, parameters: Record<string, unknown>) => Promise<unknown>
-      await updateDuplicate('PATCH /repos/{owner}/{repo}/issues/{issue_number}', { owner, repo: repoName, issue_number: issueNumber, state: 'closed', state_reason: 'duplicate', duplicate_issue_id: duplicateIssue.id })
+      try {
+        const { data: duplicateIssue } = await octokit.rest.issues.get({ owner: contextRepository.owner, repo: contextRepository.repo, issue_number: duplicateIssueNumber })
+        const updateDuplicate = octokit.request as unknown as (route: string, parameters: Record<string, unknown>) => Promise<unknown>
+        await updateDuplicate('PATCH /repos/{owner}/{repo}/issues/{issue_number}', { owner, repo: repoName, issue_number: issueNumber, state: 'closed', state_reason: 'duplicate', duplicate_issue_id: duplicateIssue.id })
+      } catch (error) {
+        core.warning(`Unable to mark issue #${issueNumber} as a duplicate: ${(error as Error).message}. Closing as not planned instead.`)
+        await octokit.rest.issues.update({ owner, repo: repoName, issue_number: issueNumber, state: 'closed', state_reason: 'not_planned' })
+      }
     } else {
       await octokit.rest.issues.update({ owner, repo: repoName, issue_number: issueNumber, state: 'closed', state_reason: result.disposition === 'close-completed' ? 'completed' : 'not_planned' })
     }
