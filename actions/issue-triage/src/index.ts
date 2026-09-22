@@ -106,6 +106,25 @@ async function readContextFiles(octokit: Octokit, owner: string, repo: string, r
   return contexts
 }
 
+function retryDelay(error: unknown): number | undefined {
+  const match = (error instanceof Error ? error.message : String(error)).match(/try again in ([\d.]+)s/i)
+  return match ? Math.ceil(Number(match[1])) * 1_000 + 1_000 : undefined
+}
+
+async function searchCodeWithRetry(octokit: Octokit, owner: string, repo: string, branch: string, query: string, maxFiles: number): Promise<Awaited<ReturnType<typeof octokit.rest.search.code>>['data']> {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      return (await octokit.rest.search.code({ q: `repo:${owner}/${repo} ref:${branch} ${query}`, per_page: maxFiles })).data
+    } catch (error) {
+      const delay = retryDelay(error)
+      if (!delay || attempt === 2) throw error
+      core.warning(`Code search "${query}" was rate-limited. Retrying in ${Math.round(delay / 1_000)}s (${attempt + 1}/2)`)
+      await new Promise(resolve => setTimeout(resolve, delay))
+    }
+  }
+  throw new Error(`Code search retries exhausted for "${query}"`)
+}
+
 async function collectRepositoryContext(
   octokit: Octokit,
   owner: string,
@@ -127,12 +146,13 @@ async function collectRepositoryContext(
   }
   try {
     core.info(`Searching ${owner}/${repo}@${branch} code with ${queries.length} query(s): ${queries.join(', ')}`)
-    const searches = await Promise.all(queries.map(query => octokit.rest.search.code({
-      q: `repo:${owner}/${repo} ref:${branch} ${query}`,
-      per_page: maxFiles,
-    })))
-    for (const [index, search] of searches.entries()) core.info(`Code search "${queries[index]}" found ${search.data.items.length} file(s)`)
-    const paths = [...new Set(searches.flatMap(search => search.data.items.map(item => item.path)))].slice(0, maxFiles)
+    const searches = []
+    for (const query of queries) {
+      const search = await searchCodeWithRetry(octokit, owner, repo, branch, query, maxFiles)
+      core.info(`Code search "${query}" found ${search.items.length} file(s)`)
+      searches.push(search)
+    }
+    const paths = [...new Set(searches.flatMap(search => search.items.map(item => item.path)))].slice(0, maxFiles)
     core.info(`Found ${paths.length} code context file(s): ${paths.join(', ') || '(none)'}`)
     const contexts = { ...explicitContexts, ...await readContextFiles(octokit, owner, repo, branch, paths, maxBytes) }
     core.info(`Including ${Object.keys(contexts).length} total repository context file(s)`)
