@@ -60,13 +60,19 @@ function quoteEvidence(name: string, value: unknown): string {
   return `<untrusted-evidence source="${name}">\n${JSON.stringify(value, null, 2)}\n</untrusted-evidence>`
 }
 
-function searchTerms(title: string, body: string | null): string {
+function searchTerms(title: string, body: string | null): string[] {
   return `${title} ${body ?? ''}`
     .replace(/[^\p{L}\p{N}\s]/gu, ' ')
     .split(/\s+/)
     .filter(word => word.length >= 4)
-    .slice(0, 8)
-    .join(' ')
+    .slice(0, 3)
+}
+
+function contextSearchQueries(value: unknown): string[] {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Context search planner response must be a JSON object')
+  const queries = (value as Record<string, unknown>).queries
+  if (!Array.isArray(queries) || !queries.every(query => typeof query === 'string')) throw new Error('Context search planner queries must be a string array')
+  return [...new Set(queries.map(query => query.replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim()).filter(query => query.length >= 3).map(query => query.split(' ').slice(0, 6).join(' ')))].slice(0, 3)
 }
 
 function parseRepository(input: string, fallback: { owner: string, repo: string }): { owner: string, repo: string } {
@@ -106,30 +112,47 @@ async function collectRepositoryContext(
   repo: string,
   branchInput: string,
   files: string[],
-  terms: string,
+  queries: string[],
   maxBytes: number,
   maxFiles: number,
 ): Promise<Record<string, string>> {
   const { data: repository } = await octokit.rest.repos.get({ owner, repo })
   const branch = branchInput.trim() || repository.default_branch
   const explicitContexts = files.length > 0 ? await readContextFiles(octokit, owner, repo, branch, files, maxBytes) : {}
+  if (files.length > 0) core.info(`Loaded ${Object.keys(explicitContexts).length} configured context file(s): ${Object.keys(explicitContexts).join(', ') || '(none)'}`)
 
-  const queryTerms = terms.split(' ').slice(0, 3)
-  if (queryTerms.length === 0) {
+  if (queries.length === 0) {
     core.warning(`No searchable issue terms for ${owner}/${repo}@${branch}; no additional repository context included`)
     return explicitContexts
   }
   try {
-    const searches = await Promise.all(queryTerms.map(term => octokit.rest.search.code({
-      q: `repo:${owner}/${repo} ref:${branch} ${term}`,
+    core.info(`Searching ${owner}/${repo}@${branch} code with ${queries.length} query(s): ${queries.join(', ')}`)
+    const searches = await Promise.all(queries.map(query => octokit.rest.search.code({
+      q: `repo:${owner}/${repo} ref:${branch} ${query}`,
       per_page: maxFiles,
     })))
+    for (const [index, search] of searches.entries()) core.info(`Code search "${queries[index]}" found ${search.data.items.length} file(s)`)
     const paths = [...new Set(searches.flatMap(search => search.data.items.map(item => item.path)))].slice(0, maxFiles)
-    core.info(`Found ${paths.length} repository context file(s) in ${owner}/${repo}@${branch}`)
-    return { ...explicitContexts, ...await readContextFiles(octokit, owner, repo, branch, paths, maxBytes) }
+    core.info(`Found ${paths.length} code context file(s): ${paths.join(', ') || '(none)'}`)
+    const contexts = { ...explicitContexts, ...await readContextFiles(octokit, owner, repo, branch, paths, maxBytes) }
+    core.info(`Including ${Object.keys(contexts).length} total repository context file(s)`)
+    return contexts
   } catch (error) {
     core.warning(`Repository context search failed for ${owner}/${repo}@${branch}: ${(error as Error).message}`)
     return explicitContexts
+  }
+}
+
+async function planContextQueries(provider: Provider, key: string, model: string, baseUrl: string, cliPath: string, cliVersion: string, issue: unknown, comments: unknown): Promise<string[]> {
+  try {
+    core.info('Planning targeted code-search queries from issue evidence')
+    const prompt = await readFile(resolve(__dirname, '..', 'prompts', 'context-search.md'), 'utf8')
+    const queries = contextSearchQueries(await requestInference(provider, key, model, baseUrl, cliPath, cliVersion, prompt, `${quoteEvidence('issue', issue)}\n\n${quoteEvidence('issue-comments', comments)}`))
+    core.info(`Planned ${queries.length} targeted code-search query(s): ${queries.join(', ') || '(none)'}`)
+    return queries
+  } catch (error) {
+    core.warning(`Context search planner failed; using deterministic fallback only: ${(error as Error).message}`)
+    return []
   }
 }
 
@@ -334,17 +357,21 @@ async function run(): Promise<void> {
   if (bypassForMembers && issue.user?.login && await isCollaborator(octokit, owner, repoName, issue.user.login)) return core.info(`Skipping collaborator issue #${issueNumber}`)
   const comments = await octokit.paginate(octokit.rest.issues.listComments, { owner, repo: repoName, issue_number: issueNumber, per_page: 100 })
   if (!allowRetriage && comments.some(comment => markerComment(comment, marker, botLogin))) return core.info(`Issue #${issueNumber} was already triaged by this bot`)
+  const deterministicQueries = searchTerms(issue.title, issue.body ?? null)
+  const plannedQueries = await planContextQueries(provider, core.getInput('provider-key'), core.getInput('provider-model'), core.getInput('provider-base-url'), core.getInput('copilot-cli-path'), core.getInput('copilot-cli-version'), { title: issue.title, body: issue.body }, comments.map(comment => ({ author: comment.user?.login, body: comment.body })))
+  const contextQueries = [...new Set([...plannedQueries, ...deterministicQueries])]
+  core.info(`Using ${contextQueries.length} total code-search query(s), including deterministic fallback: ${contextQueries.join(', ') || '(none)'}`)
 
   const [labels, relatedIssues, contextFiles, prompt] = await Promise.all([
     octokit.paginate(octokit.rest.issues.listLabelsForRepo, { owner, repo: repoName, per_page: 100 }),
-    octokit.rest.search.issuesAndPullRequests({ q: `repo:${contextRepository.owner}/${contextRepository.repo} is:issue ${searchTerms(issue.title, issue.body ?? null)}`, per_page: maxRelatedIssues }),
+    octokit.rest.search.issuesAndPullRequests({ q: `repo:${contextRepository.owner}/${contextRepository.repo} is:issue ${deterministicQueries.join(' ')}`, per_page: maxRelatedIssues }),
     collectRepositoryContext(
       octokit,
       contextRepository.owner,
       contextRepository.repo,
       core.getInput('context-branch'),
       csv(core.getInput('context-files')),
-      searchTerms(issue.title, issue.body ?? null),
+      contextQueries,
       maxContextBytes,
       maxContextFiles,
     ),
