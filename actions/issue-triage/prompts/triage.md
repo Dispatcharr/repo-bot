@@ -55,26 +55,24 @@ Use only a disposition listed in `Allowed disposition values`.
 - Never recommend `good-first-issue`.
 - Use `needs-experienced-contributor` when the work needs technical or product judgment.
 - `close-completed` requires `fixed-released`. Never close an issue merely because the fix is unreleased.
-- `close-duplicate` requires an actual supplied canonical issue number in `relatedIssueNumbers`.
+- `close-duplicate` requires exactly one actual supplied canonical issue number in `relatedIssueNumbers`.
 - `related` remains open and should reference the overlapping issue in the notes.
 - When closure evidence is weak, use `keep-open` or `needs-experienced-contributor`.
 
-Only add or remove labels from `Repository labels`. Include the selected P1-P4 label only if that exact label exists. Do not add and remove the same label. Do not remove `Triage`; the action controls its lifecycle after successful triage.
+Only add or remove labels from `Repository labels`. Include the selected P1-P4 label only if that exact label exists. Do not add and remove the same label. When recommending a closing disposition, `labelsToAdd` must be an empty array. Do not remove `Triage`; the action controls its lifecycle after successful triage.
 
 # Comment Format
 
 The action, not you, renders the final bot comment. Populate the JSON fields so it produces exactly this format:
 
 ```markdown
-**Assessment:** <status>. <statusReason>
-
-**Effort:** <effort>. <effortReason>
-
-**Functional area:** <functionalArea>
-
-**Priority:** <priority>. <priorityReason>
-
-**Recommendation:** <disposition>. <dispositionReason>
+| Field | Assessment |
+| --- | --- |
+| Status | <status>. <statusReason> |
+| Effort | <effort>. <effortReason> |
+| Functional area | <functionalArea> |
+| Priority | <priority>. <priorityReason> |
+| Recommendation | <disposition>. <dispositionReason> |
 
 <comment>
 ```

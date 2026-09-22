@@ -289,10 +289,15 @@ function validateResult(value: unknown, repositoryLabels: Set<string>, allowedDi
   const labelsToRemove = strings('labelsToRemove')
   if ([...labelsToAdd, ...labelsToRemove].some(label => !repositoryLabels.has(label))) throw new Error('Inference response proposed a label that does not exist in this repository')
   if (labelsToAdd.some(label => labelsToRemove.includes(label))) throw new Error('Inference response cannot add and remove the same label')
+  if (CLOSING_DISPOSITIONS.has(disposition) && labelsToAdd.length) throw new Error('Inference response cannot add labels when closing an issue')
   const comment = string('comment')
   if (comment.length > maxCommentLength) throw new Error(`Inference response comment exceeds max-comment-length (${maxCommentLength})`)
   if (comment.includes('<!--') || comment.includes(marker)) throw new Error('Inference response comment contains a reserved marker')
   return { status, statusReason: string('statusReason'), effort, effortReason: string('effortReason'), priority, priorityReason: string('priorityReason'), functionalArea, disposition, dispositionReason: string('dispositionReason'), labelsToAdd, labelsToRemove, relatedIssueNumbers: numbers('relatedIssueNumbers'), comment }
+}
+
+function tableCell(value: string): string {
+  return value.replace(/\|/g, '\\|').replace(/\r?\n/g, '<br>')
 }
 
 async function run(): Promise<void> {
@@ -349,26 +354,39 @@ async function run(): Promise<void> {
     issue: { number: issue.number, title: issue.title, body: issue.body, createdAt: issue.created_at, updatedAt: issue.updated_at, labels: issue.labels.map(label => typeof label === 'string' ? label : label.name) },
     comments: comments.map(comment => ({ author: comment.user?.login, createdAt: comment.created_at, body: comment.body })),
     labels: [...repositoryLabels],
-    relatedIssues: relatedIssues.data.items.filter(item => item.number !== issueNumber).map(item => ({ number: item.number, title: item.title, state: item.state, body: item.body, labels: item.labels })),
+    relatedIssues: relatedIssues.data.items.filter(item => contextRepository.owner !== owner || contextRepository.repo !== repoName || item.number !== issueNumber).map(item => ({ number: item.number, title: item.title, state: item.state, body: item.body, labels: item.labels })),
     contextFiles,
     allowedDispositions: [...allowedDispositions],
   })), repositoryLabels, allowedDispositions, maxCommentLength, marker)
   core.info(`Validated triage for issue #${issueNumber}: ${JSON.stringify({ status: result.status, effort: result.effort, priority: result.priority, disposition: result.disposition, labelsToAdd: result.labelsToAdd, labelsToRemove: result.labelsToRemove, relatedIssueNumbers: result.relatedIssueNumbers })}`)
 
-  const report = `**Assessment:** ${result.status}. ${result.statusReason}\n\n**Effort:** ${result.effort}. ${result.effortReason}\n\n**Functional area:** ${result.functionalArea}\n\n**Priority:** ${result.priority}. ${result.priorityReason}\n\n**Recommendation:** ${result.disposition}. ${result.dispositionReason}\n\n${result.comment}\n\n<!-- ${marker} -->`
+  const closing = CLOSING_DISPOSITIONS.has(result.disposition)
+  const duplicateIssueNumber = result.disposition === 'close-duplicate' ? result.relatedIssueNumbers[0] : undefined
+  if (result.disposition === 'close-duplicate' && (result.relatedIssueNumbers.length !== 1 || !relatedIssues.data.items.some(item => item.number === duplicateIssueNumber))) {
+    throw new Error('close-duplicate requires exactly one supplied related canonical issue number')
+  }
+  const report = `| Field | Assessment |\n| --- | --- |\n| Status | ${tableCell(result.status)}. ${tableCell(result.statusReason)} |\n| Effort | ${tableCell(result.effort)}. ${tableCell(result.effortReason)} |\n| Functional area | ${tableCell(result.functionalArea)} |\n| Priority | ${tableCell(result.priority)}. ${tableCell(result.priorityReason)} |\n| Recommendation | ${tableCell(result.disposition)}. ${tableCell(result.dispositionReason)} |\n\n${result.comment}\n\n<!-- ${marker} -->`
   if (dryRun) {
     core.info(`[dry-run] Would add labels: ${result.labelsToAdd.join(', ') || '(none)'}`)
     core.info(`[dry-run] Would remove labels: ${result.labelsToRemove.join(', ') || '(none)'}${removeTriageLabel ? `, ${triageLabel}` : ''}`)
     core.info(`[dry-run] Would comment: ${report}`)
-    core.info(`[dry-run] Would close: ${allowClose && CLOSING_DISPOSITIONS.has(result.disposition)}`)
+    core.info(`[dry-run] Would close: ${allowClose && closing}`)
     return
   }
-  if (allowLabelChanges && result.labelsToAdd.length) await octokit.rest.issues.addLabels({ owner, repo: repoName, issue_number: issueNumber, labels: result.labelsToAdd })
+  if (allowLabelChanges && !closing && result.labelsToAdd.length) await octokit.rest.issues.addLabels({ owner, repo: repoName, issue_number: issueNumber, labels: result.labelsToAdd })
   if (allowLabelChanges) {
     for (const label of result.labelsToRemove) await octokit.rest.issues.removeLabel({ owner, repo: repoName, issue_number: issueNumber, name: label })
   }
   await octokit.rest.issues.createComment({ owner, repo: repoName, issue_number: issueNumber, body: report })
-  if (allowClose && CLOSING_DISPOSITIONS.has(result.disposition)) await octokit.rest.issues.update({ owner, repo: repoName, issue_number: issueNumber, state: 'closed' })
+  if (allowClose && closing) {
+    if (duplicateIssueNumber) {
+      const { data: duplicateIssue } = await octokit.rest.issues.get({ owner: contextRepository.owner, repo: contextRepository.repo, issue_number: duplicateIssueNumber })
+      const updateDuplicate = octokit.request as unknown as (route: string, parameters: Record<string, unknown>) => Promise<unknown>
+      await updateDuplicate('PATCH /repos/{owner}/{repo}/issues/{issue_number}', { owner, repo: repoName, issue_number: issueNumber, state: 'closed', state_reason: 'duplicate', duplicate_issue_id: duplicateIssue.id })
+    } else {
+      await octokit.rest.issues.update({ owner, repo: repoName, issue_number: issueNumber, state: 'closed', state_reason: result.disposition === 'close-completed' ? 'completed' : 'not_planned' })
+    }
+  }
   if (removeTriageLabel) await octokit.rest.issues.removeLabel({ owner, repo: repoName, issue_number: issueNumber, name: triageLabel })
   core.info(`Applied triage to issue #${issueNumber}`)
 }
