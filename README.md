@@ -283,11 +283,11 @@ uses: Dispatcharr/repo-bot/actions/issue-triage@v1
 | `max-context-files` | no | `10` | Maximum files included from automatic context search. |
 | `max-related-issues` | no | `10` | Maximum related issue search results supplied to the model. |
 | `max-comment-length` | no | `4000` | Maximum model-provided report length. |
-| `dry-run` | no | `false` | Write the rendered triage preview to the workflow summary without modifying GitHub state. |
+| `dry-run` | no | `false` | Skip issue mutations. Every run writes its rendered assessment to the workflow summary. |
 
 After successful processing, the action always removes the trigger label.
 
-Issue bodies, comments, related issues, and context files are untrusted evidence. They are tagged as untrusted in the prompt, cannot issue GitHub API operations, and model output must pass local schema and repository-label validation before the action mutates GitHub state. Every completed triage posts a table-only bot comment with its assessment, estimated effort, functional area, priority, supporting details, and an automation notice. The recommendation appears only in the dry-run workflow summary. Open issues automatically receive their selected P1-P4 and matching `Area:` labels when those labels exist. `Bug` and `Feature Request` labels are not applied because GitHub issue types classify them.
+Issue bodies, comments, related issues, and context files are untrusted evidence. They are tagged as untrusted in the prompt, cannot issue GitHub API operations, and model output must pass local schema and repository-label validation before the action mutates GitHub state. Every run adds an assessment summary, including its recommendation, to the workflow. Every completed triage also posts a table-only bot comment with its assessment, estimated effort, functional area, priority, supporting details, and an automation notice. Open issues automatically receive their selected P1-P4 and matching `Area:` labels when those labels exist. `Bug` and `Feature Request` labels are not applied because GitHub issue types classify them.
 
 #### Usage
 
