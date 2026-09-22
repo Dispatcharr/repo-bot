@@ -280,6 +280,7 @@ uses: Dispatcharr/repo-bot/actions/issue-triage@v1
 | `bypass-for-members` | no | `false` | Skip issues opened by repository collaborators. |
 | `context-files` | no | empty | Comma-separated repository-relative text files read from `context-repository`, in addition to files found by issue-derived code search. |
 | `max-context-bytes` | no | `40000` | Maximum bytes read from each context file. |
+| `max-context-total-bytes` | no | `60000` | Maximum bytes included across all supplemental repository context files. |
 | `max-context-files` | no | `10` | Maximum files included from automatic context search. |
 | `max-related-issues` | no | `10` | Maximum related issue search results supplied to the model. |
 | `max-comment-length` | no | `4000` | Maximum model-provided report length. |
@@ -287,7 +288,7 @@ uses: Dispatcharr/repo-bot/actions/issue-triage@v1
 
 After successful processing, the action always removes the trigger label.
 
-Issue bodies, comments, related issues, and context files are untrusted evidence. They are tagged as untrusted in the prompt, cannot issue GitHub API operations, and model output must pass local schema and repository-label validation before the action mutates GitHub state. Every run adds an assessment summary, including its recommendation, to the workflow. Every completed triage also posts a table-only bot comment with its assessment, estimated effort, functional area, priority, supporting details, and an automation notice. Open issues automatically receive their selected P1-P4 and matching `Area:` labels when those labels exist. `Bug` and `Feature Request` labels are not applied because GitHub issue types classify them.
+Issue bodies, comments, related issues, and context files are untrusted evidence. They are tagged as untrusted in the prompt, cannot issue GitHub API operations, and model output must pass local schema and repository-label validation before the action mutates GitHub state. System instructions and the triggering issue with its comments are always included intact. The shared context budget applies only to supplemental repository files, while related-issue bodies are limited to the top three candidates. Every run adds an assessment summary, including its recommendation, to the workflow. Every completed triage also posts a table-only bot comment with its assessment, estimated effort, functional area, priority, supporting details, and an automation notice. Open issues automatically receive their selected P1-P4 and matching `Area:` labels when those labels exist. `Bug` and `Feature Request` labels are not applied because GitHub issue types classify them.
 
 #### Usage
 

@@ -84,10 +84,26 @@ function parseRepository(input: string, fallback: { owner: string, repo: string 
   return { owner, repo }
 }
 
-async function readContextFiles(octokit: Octokit, owner: string, repo: string, ref: string, files: string[], maxBytes: number): Promise<Record<string, string>> {
+function truncateContext(value: string, maxBytes: number): string {
+  const bytes = Buffer.from(value)
+  return bytes.length <= maxBytes ? value : `${bytes.subarray(0, Math.max(0, maxBytes - 16)).toString('utf8')}\n[truncated]`
+}
+
+function contextExcerpt(value: string, queries: string[], maxBytes: number): string {
+  const lowerValue = value.toLowerCase()
+  const match = queries.map(query => lowerValue.indexOf(query.toLowerCase())).find(index => index >= 0)
+  if (match === undefined) return truncateContext(value, maxBytes)
+  const start = Math.max(0, match - 1_500)
+  const end = Math.min(value.length, match + 2_500)
+  return truncateContext(`${start > 0 ? '[... omitted ...]\n' : ''}${value.slice(start, end)}${end < value.length ? '\n[... omitted ...]' : ''}`, maxBytes)
+}
+
+async function readContextFiles(octokit: Octokit, owner: string, repo: string, ref: string, files: string[], maxBytes: number, totalBytes: number, queries: string[] = []): Promise<{ contexts: Record<string, string>, bytes: number }> {
   const contexts: Record<string, string> = {}
+  let bytes = 0
 
   for (const file of files) {
+    if (bytes >= totalBytes) break
     if (!file || file.startsWith('/') || file.split(/[\\/]/).includes('..')) {
       core.warning(`Skipping unsafe context file path: ${file}`)
       continue
@@ -98,12 +114,15 @@ async function readContextFiles(octokit: Octokit, owner: string, repo: string, r
         core.warning(`Skipping non-file context path: ${file}`)
         continue
       }
-      contexts[`${ref}:${file}`] = Buffer.from(data.content, 'base64').subarray(0, maxBytes).toString('utf8')
+      const content = Buffer.from(data.content, 'base64').toString('utf8')
+      const excerpt = queries.length > 0 ? contextExcerpt(content, queries, Math.min(maxBytes, totalBytes - bytes)) : truncateContext(content, Math.min(maxBytes, totalBytes - bytes))
+      contexts[`${ref}:${file}`] = excerpt
+      bytes += Buffer.byteLength(excerpt)
     } catch {
       core.info(`Context file unavailable from ${owner}/${repo}: ${file}`)
     }
   }
-  return contexts
+  return { contexts, bytes }
 }
 
 function retryDelay(error: unknown): number | undefined {
@@ -133,16 +152,17 @@ async function collectRepositoryContext(
   files: string[],
   queries: string[],
   maxBytes: number,
+  maxTotalBytes: number,
   maxFiles: number,
 ): Promise<Record<string, string>> {
   const { data: repository } = await octokit.rest.repos.get({ owner, repo })
   const branch = branchInput.trim() || repository.default_branch
-  const explicitContexts = files.length > 0 ? await readContextFiles(octokit, owner, repo, branch, files, maxBytes) : {}
-  if (files.length > 0) core.info(`Loaded ${Object.keys(explicitContexts).length} configured context file(s): ${Object.keys(explicitContexts).join(', ') || '(none)'}`)
+  const explicit = files.length > 0 ? await readContextFiles(octokit, owner, repo, branch, files, maxBytes, maxTotalBytes) : { contexts: {}, bytes: 0 }
+  if (files.length > 0) core.info(`Loaded ${Object.keys(explicit.contexts).length} configured context file(s), using ${explicit.bytes}/${maxTotalBytes} bytes: ${Object.keys(explicit.contexts).join(', ') || '(none)'}`)
 
   if (queries.length === 0) {
     core.warning(`No searchable issue terms for ${owner}/${repo}@${branch}; no additional repository context included`)
-    return explicitContexts
+    return explicit.contexts
   }
   try {
     core.info(`Searching ${owner}/${repo}@${branch} code with ${queries.length} query(s): ${queries.join(', ')}`)
@@ -152,14 +172,15 @@ async function collectRepositoryContext(
       core.info(`Code search "${query}" found ${search.items.length} file(s)`)
       searches.push(search)
     }
-    const paths = [...new Set(searches.flatMap(search => search.items.map(item => item.path)))].slice(0, maxFiles)
+    const paths = [...new Set(searches.flatMap(search => search.items.map(item => item.path)))].filter(path => !files.includes(path)).slice(0, maxFiles)
     core.info(`Found ${paths.length} code context file(s): ${paths.join(', ') || '(none)'}`)
-    const contexts = { ...explicitContexts, ...await readContextFiles(octokit, owner, repo, branch, paths, maxBytes) }
-    core.info(`Including ${Object.keys(contexts).length} total repository context file(s)`)
+    const code = await readContextFiles(octokit, owner, repo, branch, paths, maxBytes, maxTotalBytes - explicit.bytes, queries)
+    const contexts = { ...explicit.contexts, ...code.contexts }
+    core.info(`Including ${Object.keys(contexts).length} total repository context file(s), using ${explicit.bytes + code.bytes}/${maxTotalBytes} bytes`)
     return contexts
   } catch (error) {
     core.warning(`Repository context search failed for ${owner}/${repo}@${branch}: ${(error as Error).message}`)
-    return explicitContexts
+    return explicit.contexts
   }
 }
 
@@ -388,6 +409,7 @@ async function run(): Promise<void> {
   const bypassForMembers = core.getBooleanInput('bypass-for-members')
   const dryRun = core.getBooleanInput('dry-run')
   const maxContextBytes = parsePositiveInteger(core.getInput('max-context-bytes'), 'max-context-bytes')
+  const maxContextTotalBytes = parsePositiveInteger(core.getInput('max-context-total-bytes'), 'max-context-total-bytes')
   const maxContextFiles = parsePositiveInteger(core.getInput('max-context-files'), 'max-context-files')
   const maxRelatedIssues = parsePositiveInteger(core.getInput('max-related-issues'), 'max-related-issues')
   const maxCommentLength = parsePositiveInteger(core.getInput('max-comment-length'), 'max-comment-length')
@@ -408,7 +430,7 @@ async function run(): Promise<void> {
   if (!allowRetriage && comments.some(comment => markerComment(comment, marker, botLogin))) return core.info(`Issue #${issueNumber} was already triaged by this bot`)
   const deterministicQueries = searchTerms(issue.title, issue.body ?? null)
   const plannedQueries = await planContextQueries(provider, core.getInput('provider-key'), core.getInput('provider-model'), core.getInput('provider-base-url'), core.getInput('copilot-cli-path'), core.getInput('copilot-cli-version'), { title: issue.title, body: issue.body }, comments.map(comment => ({ author: comment.user?.login, body: comment.body })))
-  const contextQueries = [...new Set([...plannedQueries, ...deterministicQueries])]
+  const contextQueries = [...new Set([...plannedQueries.slice(0, 2), ...deterministicQueries.slice(0, 2)])]
   core.info(`Using ${contextQueries.length} total code-search query(s), including deterministic fallback: ${contextQueries.join(', ') || '(none)'}`)
 
   const contextStartedAt = Date.now()
@@ -424,6 +446,7 @@ async function run(): Promise<void> {
       csv(core.getInput('context-files')),
       contextQueries,
       maxContextBytes,
+      maxContextTotalBytes,
       maxContextFiles,
     ),
     readPrompt(core.getInput('prompt-file')),
@@ -436,7 +459,7 @@ async function run(): Promise<void> {
     issue: { number: issue.number, title: issue.title, body: issue.body, createdAt: issue.created_at, updatedAt: issue.updated_at, labels: issue.labels.map(label => typeof label === 'string' ? label : label.name) },
     comments: comments.map(comment => ({ author: comment.user?.login, createdAt: comment.created_at, body: comment.body })),
     labels: [...repositoryLabels],
-    relatedIssues: relatedIssues.data.items.filter(item => contextRepository.owner !== owner || contextRepository.repo !== repoName || item.number !== issueNumber).map(item => ({ number: item.number, title: item.title, state: item.state, body: item.body, labels: item.labels })),
+    relatedIssues: relatedIssues.data.items.filter(item => contextRepository.owner !== owner || contextRepository.repo !== repoName || item.number !== issueNumber).map((item, index) => ({ number: item.number, title: item.title, state: item.state, body: index < 3 ? truncateContext(item.body ?? '', 6_000) : undefined, labels: item.labels })),
     contextFiles,
     allowedDispositions: [...allowedDispositions],
   }))

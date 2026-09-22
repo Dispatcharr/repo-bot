@@ -79,6 +79,10 @@ inputs:
     description: "Maximum UTF-8 bytes read from each context file."
     required: false
     default: '40000'
+  max-context-total-bytes:
+    description: "Maximum UTF-8 bytes included across all supplemental repository context files."
+    required: false
+    default: '60000'
   max-context-files:
     description: "Maximum repository files included from automatic context search."
     required: false
