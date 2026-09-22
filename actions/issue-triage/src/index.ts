@@ -359,11 +359,14 @@ function validateResult(value: unknown, repositoryLabels: Set<string>, allowedDi
   if (!VALID_PRIORITIES.includes(priority)) throw new Error(`Invalid priority: ${priority}`)
   if (functionalArea.length > 120) throw new Error('Inference response functionalArea exceeds 120 characters')
   if (!allowedDispositions.has(disposition)) throw new Error(`Invalid disposition: ${disposition}`)
-  const labelsToAdd = strings('labelsToAdd')
+  let labelsToAdd = strings('labelsToAdd')
   const labelsToRemove = strings('labelsToRemove')
   if ([...labelsToAdd, ...labelsToRemove].some(label => !repositoryLabels.has(label))) throw new Error('Inference response proposed a label that does not exist in this repository')
   if (labelsToAdd.some(label => labelsToRemove.includes(label))) throw new Error('Inference response cannot add and remove the same label')
-  if (CLOSING_DISPOSITIONS.has(disposition) && labelsToAdd.length) throw new Error('Inference response cannot add labels when closing an issue')
+  if (CLOSING_DISPOSITIONS.has(disposition) && labelsToAdd.length) {
+    core.info('Ignoring proposed label additions for a closing disposition')
+    labelsToAdd = []
+  }
   const comment = string('comment')
   if (comment.length > maxCommentLength) throw new Error(`Inference response comment exceeds max-comment-length (${maxCommentLength})`)
   if (comment.includes('<!--') || comment.includes(marker)) throw new Error('Inference response comment contains a reserved marker')
