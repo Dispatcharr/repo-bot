@@ -311,6 +311,7 @@ async function run(): Promise<void> {
   if (allowedDispositions.size === 0) throw new Error('allowed-dispositions must not be empty')
   const allowLabelChanges = core.getBooleanInput('allow-label-changes')
   const allowClose = core.getBooleanInput('allow-close')
+  const allowRetriage = core.getBooleanInput('allow-retriage')
   const bypassForMembers = core.getBooleanInput('bypass-for-members')
   const dryRun = core.getBooleanInput('dry-run')
   const maxContextBytes = parsePositiveInteger(core.getInput('max-context-bytes'), 'max-context-bytes')
@@ -331,7 +332,7 @@ async function run(): Promise<void> {
   if (issue.state !== 'open' || !hasLabel(issue.labels, triageLabel)) return core.info(`Issue #${issueNumber} is not an open triage candidate`)
   if (bypassForMembers && issue.user?.login && await isCollaborator(octokit, owner, repoName, issue.user.login)) return core.info(`Skipping collaborator issue #${issueNumber}`)
   const comments = await octokit.paginate(octokit.rest.issues.listComments, { owner, repo: repoName, issue_number: issueNumber, per_page: 100 })
-  if (comments.some(comment => markerComment(comment, marker, botLogin))) return core.info(`Issue #${issueNumber} was already triaged by this bot`)
+  if (!allowRetriage && comments.some(comment => markerComment(comment, marker, botLogin))) return core.info(`Issue #${issueNumber} was already triaged by this bot`)
 
   const [labels, relatedIssues, contextFiles, prompt] = await Promise.all([
     octokit.paginate(octokit.rest.issues.listLabelsForRepo, { owner, repo: repoName, per_page: 100 }),

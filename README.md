@@ -276,6 +276,7 @@ uses: Dispatcharr/repo-bot/actions/issue-triage@v1
 | `allowed-dispositions` | no | built-in list | Comma-separated dispositions permitted for model output. |
 | `allow-label-changes` | no | `true` | Apply validated label additions and removals. |
 | `allow-close` | no | `true` | Close issues for an allowed closing disposition. |
+| `allow-retriage` | no | `false` | Reprocess an issue when the trigger label is reapplied after this bot already triaged it. |
 | `bypass-for-members` | no | `false` | Skip issues opened by repository collaborators. |
 | `context-files` | no | empty | Comma-separated repository-relative text files read from `context-repository`. When empty, the action searches the selected branch for files matching issue-derived terms. |
 | `max-context-bytes` | no | `40000` | Maximum bytes read from each context file. |

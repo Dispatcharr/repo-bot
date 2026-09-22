@@ -63,6 +63,10 @@ inputs:
     description: "Close issues when the validated disposition is a closing disposition."
     required: false
     default: 'true'
+  allow-retriage:
+    description: "Allow a newly applied triage label to reprocess an issue that already has this bot's completion marker."
+    required: false
+    default: 'false'
   bypass-for-members:
     description: "Skip issues opened by repository collaborators."
     required: false
