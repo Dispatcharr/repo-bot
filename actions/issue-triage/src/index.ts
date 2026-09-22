@@ -113,17 +113,17 @@ async function collectRepositoryContext(
   const branch = branchInput.trim() || repository.default_branch
   if (files.length > 0) return readContextFiles(octokit, owner, repo, branch, files, maxBytes)
 
-  const queryTerms = terms.split(' ').slice(0, 3).join(' ')
-  if (!queryTerms) {
+  const queryTerms = terms.split(' ').slice(0, 3)
+  if (queryTerms.length === 0) {
     core.warning(`No searchable issue terms for ${owner}/${repo}@${branch}; no repository context included`)
     return {}
   }
   try {
-    const { data } = await octokit.rest.search.code({
-      q: `repo:${owner}/${repo} ref:${branch} ${queryTerms}`,
+    const searches = await Promise.all(queryTerms.map(term => octokit.rest.search.code({
+      q: `repo:${owner}/${repo} ref:${branch} ${term}`,
       per_page: maxFiles,
-    })
-    const paths = [...new Set(data.items.map(item => item.path))]
+    })))
+    const paths = [...new Set(searches.flatMap(search => search.data.items.map(item => item.path)))].slice(0, maxFiles)
     core.info(`Found ${paths.length} repository context file(s) in ${owner}/${repo}@${branch}`)
     return readContextFiles(octokit, owner, repo, branch, paths, maxBytes)
   } catch (error) {
@@ -160,8 +160,7 @@ function userPrompt(input: {
 }
 
 async function readPrompt(promptFile: string): Promise<string> {
-  const path = promptFile || resolve(process.env.GITHUB_ACTION_PATH ?? '', 'prompts/triage.md')
-  if (!path) throw new Error('Unable to locate bundled triage prompt')
+  const path = promptFile || resolve(__dirname, '..', 'prompts', 'triage.md')
   return readFile(path, 'utf8')
 }
 
