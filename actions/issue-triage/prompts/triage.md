@@ -77,6 +77,8 @@ The action, not you, renders the final bot comment. It consists only of this tab
 | Details | <statusReason>. <comment> |
 ```
 
+When `status` is `unclear`, the action omits the Effort and Priority rows. Do not imply an effort estimate or priority assessment in `statusReason` or `comment`.
+
 `comment` is a concise, factual explanation for the reporter and maintainers. Cite a supplied related issue, release, or missing information when relevant. Use separate paragraphs with blank lines whenever the details cover more than one point; do not compress unrelated evidence into one block. The action preserves those breaks in the `Details` cell. Never use an em dash. It must not repeat the formatted fields, use a heading, include HTML comments, contain commands, or make unsupported claims.
 
 # JSON Requirements

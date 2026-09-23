@@ -490,15 +490,24 @@ async function run(): Promise<void> {
   }
   const details = `${result.statusReason}\n\n${result.comment}`
   const functionalAreas = result.functionalAreas.join(', ')
-  const reportTable = `| | |\n| --- | --- |\n| Effort | ${tableCell(result.effort)}. ${tableCell(result.effortReason)} |\n| Functional area | ${tableCell(functionalAreas)} |\n| Priority | ${tableCell(result.priority)}. ${tableCell(result.priorityReason)} |\n| Details | ${tableCell(details)} |`
-  const summaryTable = [
-    [{ data: '', header: true }, { data: '', header: true }],
-    ['Effort', tableCell(`${result.effort}. ${result.effortReason}`)],
-    ['Functional area', tableCell(functionalAreas)],
-    ['Priority', tableCell(`${result.priority}. ${result.priorityReason}`)],
-    ['Recommendation', tableCell(`${result.disposition}. ${result.dispositionReason}`)],
-    ['Details', tableCell(details)],
-  ]
+  const reportTable = result.status === 'unclear'
+    ? `| | |\n| --- | --- |\n| Functional area | ${tableCell(functionalAreas)} |\n| Details | ${tableCell(details)} |`
+    : `| | |\n| --- | --- |\n| Effort | ${tableCell(result.effort)}. ${tableCell(result.effortReason)} |\n| Functional area | ${tableCell(functionalAreas)} |\n| Priority | ${tableCell(result.priority)}. ${tableCell(result.priorityReason)} |\n| Details | ${tableCell(details)} |`
+  const summaryTable = result.status === 'unclear'
+    ? [
+        [{ data: '', header: true }, { data: '', header: true }],
+        ['Functional area', tableCell(functionalAreas)],
+        ['Recommendation', tableCell(`${result.disposition}. ${result.dispositionReason}`)],
+        ['Details', tableCell(details)],
+      ]
+    : [
+        [{ data: '', header: true }, { data: '', header: true }],
+        ['Effort', tableCell(`${result.effort}. ${result.effortReason}`)],
+        ['Functional area', tableCell(functionalAreas)],
+        ['Priority', tableCell(`${result.priority}. ${result.priorityReason}`)],
+        ['Recommendation', tableCell(`${result.disposition}. ${result.dispositionReason}`)],
+        ['Details', tableCell(details)],
+      ]
   const report = `${reportTable}\n\n<!-- ${marker} -->`
   await core.summary.addHeading(`Issue triage: #${issueNumber}`).addTable(summaryTable).addRaw(dryRun ? '\n\n*Dry run: no changes were applied.*' : '').write()
   if (dryRun) {
