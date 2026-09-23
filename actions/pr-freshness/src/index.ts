@@ -22,6 +22,8 @@ const DEFAULT_STALE_MESSAGE =
 const DEFAULT_CLOSE_MESSAGE =
   'This pull request was closed after the freshness grace period elapsed without author activity ({reasons}). ' +
   'It can be reopened when it is ready to continue.'
+const CONFLICT_MESSAGE =
+  'Merge conflicts were detected. Please resolve them to keep this pull request eligible for review.'
 
 function parseDays(input: string, name: string): number {
   const value = Number(input.trim())
@@ -56,6 +58,18 @@ function format(template: string, values: Record<string, string>): string {
     (message, [key, value]) => message.replace(new RegExp(`\\{${key}\\}`, 'g'), value),
     template,
   )
+}
+
+function matchesPattern(path: string, pattern: string): boolean {
+  const regex = new RegExp(
+    '^' +
+    pattern
+      .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+      .replace(/\*\*/g, '.*')
+      .replace(/\*/g, '.*') +
+    '$',
+  )
+  return regex.test(path)
 }
 
 async function isCollaborator(
@@ -233,6 +247,10 @@ async function run(): Promise<void> {
   const enforcement = (core.getInput('enforcement') || 'close') as Enforcement
   const lockReason = (core.getInput('lock-reason') || 'resolved') as LockReason
   const checkConflicts = core.getBooleanInput('check-conflicts')
+  const conflictIgnorePatterns = core.getInput('conflict-ignore-patterns')
+    .split(',')
+    .map(pattern => pattern.trim())
+    .filter(Boolean)
   const checkChangesRequested = core.getBooleanInput('check-changes-requested')
   const checkMaintainerRespondedStale = core.getBooleanInput('check-maintainer-responded-stale')
   const checkCompliance = core.getBooleanInput('check-compliance')
@@ -300,7 +318,19 @@ async function run(): Promise<void> {
     )
     const inactiveSince = lastAuthorActivity ?? new Date(pr.created_at)
 
-    const conflicted = checkConflicts && (pr.mergeable === false || pr.mergeable_state === 'dirty')
+    const hasMergeConflict = pr.mergeable === false || pr.mergeable_state === 'dirty'
+    const changedFiles = checkConflicts && hasMergeConflict && conflictIgnorePatterns.length > 0
+      ? await octokit.paginate(octokit.rest.pulls.listFiles, {
+          owner,
+          repo,
+          pull_number: prNumber,
+          per_page: 100,
+        })
+      : []
+    const conflicted = checkConflicts && hasMergeConflict && (
+      conflictIgnorePatterns.length === 0 ||
+      changedFiles.some(file => !conflictIgnorePatterns.some(pattern => matchesPattern(file.filename, pattern)))
+    )
     const comments = await octokit.paginate(octokit.rest.issues.listComments, {
       owner,
       repo,
@@ -315,7 +345,7 @@ async function run(): Promise<void> {
       : undefined
     let conflictObservedAt = conflictMarker?.created_at ? new Date(conflictMarker.created_at) : null
     if (conflicted && !conflictObservedAt) {
-      await createComment(octokit, owner, repo, prNumber, CONFLICT_MARKER, dryRun)
+      await createComment(octokit, owner, repo, prNumber, `${CONFLICT_MESSAGE}\n\n${CONFLICT_MARKER}`, dryRun)
       conflictObservedAt = now
       core.info(`Started conflict timer for PR #${prNumber}`)
     } else if (!conflicted && conflictMarker) {
