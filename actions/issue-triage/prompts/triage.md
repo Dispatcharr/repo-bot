@@ -46,7 +46,7 @@ Choose exactly one `priority`:
 - `P3`: Minor or cosmetic impact, or a practical workaround exists.
 - `P4`: Low-impact, nice-to-have, or edge-case work.
 
-Set `functionalArea` to the suffix of the matching `Area: <component>` label in `Repository labels`. Use `Unclear` when no area label matches the evidence.
+Set `functionalAreas` to an array containing the suffix of every matching `Area: <component>` label in `Repository labels`. An issue may affect multiple functional areas. Use `["Unclear"]` when no area label matches the evidence.
 
 # Disposition And Labels
 
@@ -60,7 +60,9 @@ Use only a disposition listed in `Allowed disposition values`.
 - `related` remains open and should reference the overlapping issue in the notes.
 - When closure evidence is weak, use `keep-open` or `needs-experienced-contributor`.
 
-Only add or remove labels from `Repository labels`. When the selected P1-P4 label and matching `Area: <functionalArea>` label exist and the issue remains open, include them in `labelsToAdd`. Do not add `Bug` or `Feature Request`; GitHub issue types classify those. Do not add and remove the same label. When recommending a closing disposition, `labelsToAdd` must be an empty array. Do not remove `Triage`; the action controls its lifecycle after successful triage.
+Only add or remove labels from `Repository labels`. When the selected P1-P4 label and matching `Area: <functionalAreas>` labels exist and the issue remains open, include them in `labelsToAdd`. Do not add `Bug` or `Feature Request`; GitHub issue types classify those. Do not add and remove the same label. When recommending a closing disposition, `labelsToAdd` must be an empty array. Do not remove `Triage`; the action controls its lifecycle after successful triage.
+
+When evidence is insufficient, use `status: "unclear"`, state what information is missing in `statusReason` or `comment`, and use `keep-open`. Set both `labelsToAdd` and `labelsToRemove` to empty arrays. The action will retain `Triage` so the issue can be triaged after the missing information is provided.
 
 # Comment Format
 
@@ -70,7 +72,7 @@ The action, not you, renders the final bot comment. It consists only of this tab
 | | |
 | --- | --- |
 | Effort | <effort>. <effortReason> |
-| Functional area | <functionalArea> |
+| Functional area | <functionalAreas, comma-separated> |
 | Priority | <priority>. <priorityReason> |
 | Details | <statusReason>. <comment> |
 ```
@@ -79,4 +81,4 @@ The action, not you, renders the final bot comment. It consists only of this tab
 
 # JSON Requirements
 
-Use exactly the schema requested in the user message. Every reason and `comment` must be non-empty, evidence-based strings with no em dash characters. `labelsToAdd` and `labelsToRemove` must be arrays of existing repository label names. `relatedIssueNumbers` must be an array of positive integers found in supplied related-issue evidence. Keep `functionalArea` under 120 characters and `comment` within the requested maximum length.
+Use exactly the schema requested in the user message. Every reason and `comment` must be non-empty, evidence-based strings with no em dash characters. `functionalAreas` must be a non-empty array of unique strings, with each value under 120 characters. `labelsToAdd` and `labelsToRemove` must be arrays of existing repository label names. `relatedIssueNumbers` must be an array of positive integers found in supplied related-issue evidence. Keep `comment` within the requested maximum length.

@@ -20,7 +20,7 @@ type TriageResult = {
   effortReason: string
   priority: typeof VALID_PRIORITIES[number]
   priorityReason: string
-  functionalArea: string
+  functionalAreas: string[]
   disposition: string
   dispositionReason: string
   labelsToAdd: string[]
@@ -196,7 +196,7 @@ function userPrompt(input: {
     'Return one JSON object with this exact shape:',
     JSON.stringify({
       status: 'one allowed status', statusReason: 'evidence-based string', effort: 'one allowed effort', effortReason: 'evidence-based string',
-      priority: 'one allowed priority', priorityReason: 'evidence-based string', functionalArea: 'affected component or Unclear', disposition: 'one allowed disposition', dispositionReason: 'evidence-based string',
+      priority: 'one allowed priority', priorityReason: 'evidence-based string', functionalAreas: ['affected components or Unclear'], disposition: 'one allowed disposition', dispositionReason: 'evidence-based string',
       labelsToAdd: ['repository label names'], labelsToRemove: ['repository label names'], relatedIssueNumbers: [123], comment: 'concise report',
     }, null, 2),
     `Allowed status values: ${VALID_STATUSES.join(', ')}`,
@@ -375,25 +375,30 @@ function validateResult(value: unknown, repositoryLabels: Set<string>, allowedDi
   const status = string('status') as TriageResult['status']
   const effort = string('effort') as TriageResult['effort']
   const priority = string('priority') as TriageResult['priority']
-  const functionalArea = string('functionalArea')
+  const functionalAreas = strings('functionalAreas')
   const disposition = string('disposition')
   if (!VALID_STATUSES.includes(status)) throw new Error(`Invalid status: ${status}`)
   if (!VALID_EFFORTS.includes(effort)) throw new Error(`Invalid effort: ${effort}`)
   if (!VALID_PRIORITIES.includes(priority)) throw new Error(`Invalid priority: ${priority}`)
-  if (functionalArea.length > 120) throw new Error('Inference response functionalArea exceeds 120 characters')
+  if (functionalAreas.some(area => area.length > 120)) throw new Error('Inference response functionalAreas contains a value exceeding 120 characters')
   if (!allowedDispositions.has(disposition)) throw new Error(`Invalid disposition: ${disposition}`)
   let labelsToAdd = strings('labelsToAdd')
-  const labelsToRemove = strings('labelsToRemove')
+  let labelsToRemove = strings('labelsToRemove')
   if ([...labelsToAdd, ...labelsToRemove].some(label => !repositoryLabels.has(label))) throw new Error('Inference response proposed a label that does not exist in this repository')
   if (labelsToAdd.some(label => labelsToRemove.includes(label))) throw new Error('Inference response cannot add and remove the same label')
   if (CLOSING_DISPOSITIONS.has(disposition) && labelsToAdd.length) {
     core.info('Ignoring proposed label additions for a closing disposition')
     labelsToAdd = []
   }
+  if (status === 'unclear' && (labelsToAdd.length || labelsToRemove.length)) {
+    core.info('Ignoring proposed label changes because the triage evidence is insufficient')
+    labelsToAdd = []
+    labelsToRemove = []
+  }
   const comment = string('comment')
   if (comment.length > maxCommentLength) throw new Error(`Inference response comment exceeds max-comment-length (${maxCommentLength})`)
   if (comment.includes('<!--') || comment.includes(marker)) throw new Error('Inference response comment contains a reserved marker')
-  return { status, statusReason: string('statusReason'), effort, effortReason: string('effortReason'), priority, priorityReason: string('priorityReason'), functionalArea, disposition, dispositionReason: string('dispositionReason'), labelsToAdd, labelsToRemove, relatedIssueNumbers: numbers('relatedIssueNumbers'), comment }
+  return { status, statusReason: string('statusReason'), effort, effortReason: string('effortReason'), priority, priorityReason: string('priorityReason'), functionalAreas, disposition, dispositionReason: string('dispositionReason'), labelsToAdd, labelsToRemove, relatedIssueNumbers: numbers('relatedIssueNumbers'), comment }
 }
 
 function tableCell(value: string): string {
@@ -471,11 +476,11 @@ async function run(): Promise<void> {
   }), inferenceTimeoutSeconds, inferenceRetries)
   core.info(`Phase 2/2 complete in ${((Date.now() - triageStartedAt) / 1000).toFixed(1)}s. Validating model output`)
   const result = validateResult(inference, repositoryLabels, allowedDispositions, maxCommentLength, marker)
-  core.info(`Validated triage for issue #${issueNumber}: ${JSON.stringify({ status: result.status, effort: result.effort, priority: result.priority, disposition: result.disposition, labelsToAdd: result.labelsToAdd, labelsToRemove: result.labelsToRemove, relatedIssueNumbers: result.relatedIssueNumbers })}`)
+  core.info(`Validated triage for issue #${issueNumber}: ${JSON.stringify({ status: result.status, effort: result.effort, priority: result.priority, functionalAreas: result.functionalAreas, disposition: result.disposition, labelsToAdd: result.labelsToAdd, labelsToRemove: result.labelsToRemove, relatedIssueNumbers: result.relatedIssueNumbers })}`)
 
   const closing = CLOSING_DISPOSITIONS.has(result.disposition)
-  const automaticLabels = [result.priority, `Area: ${result.functionalArea}`].filter(label => repositoryLabels.has(label))
-  const labelsToAdd = closing
+  const automaticLabels = [result.priority, ...result.functionalAreas.map(area => `Area: ${area}`)].filter(label => repositoryLabels.has(label))
+  const labelsToAdd = closing || result.status === 'unclear'
     ? []
     : [...new Set([...result.labelsToAdd.filter(label => !ISSUE_TYPE_LABELS.has(label)), ...automaticLabels])]
   if (labelsToAdd.some(label => result.labelsToRemove.includes(label))) throw new Error('Inference response cannot remove a selected priority or functional-area label')
@@ -484,11 +489,12 @@ async function run(): Promise<void> {
     throw new Error('close-duplicate requires exactly one supplied related canonical issue number')
   }
   const details = `${result.statusReason}\n\n${result.comment}`
-  const reportTable = `| | |\n| --- | --- |\n| Effort | ${tableCell(result.effort)}. ${tableCell(result.effortReason)} |\n| Functional area | ${tableCell(result.functionalArea)} |\n| Priority | ${tableCell(result.priority)}. ${tableCell(result.priorityReason)} |\n| Details | ${tableCell(details)} |`
+  const functionalAreas = result.functionalAreas.join(', ')
+  const reportTable = `| | |\n| --- | --- |\n| Effort | ${tableCell(result.effort)}. ${tableCell(result.effortReason)} |\n| Functional area | ${tableCell(functionalAreas)} |\n| Priority | ${tableCell(result.priority)}. ${tableCell(result.priorityReason)} |\n| Details | ${tableCell(details)} |`
   const summaryTable = [
     [{ data: '', header: true }, { data: '', header: true }],
     ['Effort', tableCell(`${result.effort}. ${result.effortReason}`)],
-    ['Functional area', tableCell(result.functionalArea)],
+    ['Functional area', tableCell(functionalAreas)],
     ['Priority', tableCell(`${result.priority}. ${result.priorityReason}`)],
     ['Recommendation', tableCell(`${result.disposition}. ${result.dispositionReason}`)],
     ['Details', tableCell(details)],
@@ -497,7 +503,7 @@ async function run(): Promise<void> {
   await core.summary.addHeading(`Issue triage: #${issueNumber}`).addTable(summaryTable).addRaw(dryRun ? '\n\n*Dry run: no changes were applied.*' : '').write()
   if (dryRun) {
     core.info(`[dry-run] Would add labels: ${labelsToAdd.join(', ') || '(none)'}`)
-    core.info(`[dry-run] Would remove labels: ${[...new Set([...result.labelsToRemove, triageLabel])].join(', ')}`)
+    core.info(`[dry-run] Would remove labels: ${[...new Set([...result.labelsToRemove, ...(result.status === 'unclear' ? [] : [triageLabel])])].join(', ') || '(none)'}`)
     core.info(`[dry-run] Would close: ${allowClose && closing}`)
     return
   }
@@ -520,7 +526,7 @@ async function run(): Promise<void> {
       await octokit.rest.issues.update({ owner, repo: repoName, issue_number: issueNumber, state: 'closed', state_reason: result.disposition === 'close-completed' ? 'completed' : 'not_planned' })
     }
   }
-  await octokit.rest.issues.removeLabel({ owner, repo: repoName, issue_number: issueNumber, name: triageLabel })
+  if (result.status !== 'unclear') await octokit.rest.issues.removeLabel({ owner, repo: repoName, issue_number: issueNumber, name: triageLabel })
   core.info(`Applied triage to issue #${issueNumber}`)
 }
 
