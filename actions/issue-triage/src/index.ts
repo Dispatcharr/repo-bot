@@ -350,7 +350,7 @@ async function requestInference(provider: Provider, key: string, model: string, 
       return await request()
     } catch (error) {
       if (!isTransientInferenceError(error) || attempt === retries) throw error
-      const delay = 2 ** attempt * 2_000
+      const delay = 2 ** attempt * 10_000
       core.warning(`Inference request failed transiently. Retrying in ${delay / 1_000}s (${attempt + 1}/${retries})`)
       await new Promise(resolve => setTimeout(resolve, delay))
     }
