@@ -275,6 +275,7 @@ uses: Dispatcharr/repo-bot/actions/issue-triage@v1
 | `context-branch` | no | default branch | Branch used for context retrieval. |
 | `allowed-dispositions` | no | built-in list | Comma-separated dispositions permitted for model output. |
 | `allow-label-changes` | no | `true` | Apply validated label additions and removals. |
+| `allow-type-changes` | no | `true` | Move confirmed Bug issues to the Feature issue type. |
 | `allow-close` | no | `true` | Close issues for an allowed closing disposition. |
 | `allow-retriage` | no | `false` | Reprocess an issue when the trigger label is reapplied after this bot already triaged it. |
 | `bypass-for-members` | no | `false` | Skip issues opened by repository collaborators. |
@@ -285,12 +286,12 @@ uses: Dispatcharr/repo-bot/actions/issue-triage@v1
 | `max-related-issues` | no | `10` | Maximum related issue search results supplied to the model. |
 | `max-comment-length` | no | `4000` | Maximum model-provided report length. |
 | `inference-timeout-seconds` | no | `300` | Maximum time for each provider inference request. |
-| `inference-retries` | no | `2` | Retries for transient provider rate-limit, upstream-overload, and 5xx failures. |
+| `inference-retries` | no | `2` | Retries for transient provider rate-limit, upstream-overload, and 5xx failures, starting after 10 seconds. |
 | `dry-run` | no | `false` | Skip issue mutations. Every run writes its rendered assessment to the workflow summary. |
 
-After successful processing, the action always removes the trigger label.
+After successful processing, the action removes the trigger label unless evidence is insufficient. Issues with unclear evidence retain the label for later retriage.
 
-Issue bodies, comments, related issues, and context files are untrusted evidence. They are tagged as untrusted in the prompt, cannot issue GitHub API operations, and model output must pass local schema and repository-label validation before the action mutates GitHub state. System instructions and the triggering issue with its comments are always included intact. The shared context budget applies only to supplemental repository files, while related-issue bodies are limited to the top three candidates. Every run adds an assessment summary, including its recommendation, to the workflow. Every completed triage also posts a table-only bot comment with its assessment, estimated effort, functional area, priority, and supporting details. Open issues automatically receive their selected P1-P4 and matching `Area:` labels when those labels exist. `Bug` and `Feature Request` labels are not applied because GitHub issue types classify them.
+Issue bodies, comments, related issues, and context files are untrusted evidence. They are tagged as untrusted in the prompt, cannot issue GitHub API operations, and model output must pass local schema and repository-label validation before the action mutates GitHub state. System instructions and the triggering issue with its comments are always included intact. The shared context budget applies only to supplemental repository files, while related-issue bodies are limited to the top three candidates. Every run adds an assessment summary, including its recommendation, to the workflow. Every completed triage also posts a table-only bot comment with its assessment, estimated effort, functional area, priority, and supporting details. Open issues automatically receive their selected P1-P4 and matching `Area:` labels when those labels exist. `Bug` and `Feature Request` labels are not applied because GitHub issue types classify them. When evidence confirms that a Bug is a request for new behavior, the action moves it to the Feature issue type.
 
 #### Usage
 

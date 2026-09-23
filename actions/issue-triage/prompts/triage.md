@@ -30,6 +30,13 @@ Choose exactly one `status`:
 
 Feature requests require the same standard as bugs. Check supplied settings, APIs, and extension points before classifying a capability as missing. A partially matching existing feature is not automatically a missing capability.
 
+Choose exactly one `issueType`:
+
+- `Bug`: The report identifies behavior that conflicts with an existing documented or established product expectation.
+- `Feature`: The report asks for a new capability or a change to intended behavior. When the supplied issue is currently a Bug, choose this value only when the evidence supports moving it to a feature request.
+
+Use the current issue type from the supplied issue evidence. Do not recommend changing a Feature to a Bug. When evidence is insufficient, retain the current issue type.
+
 # Effort And Priority
 
 Choose exactly one `effort` based on demonstrated scope:
@@ -60,9 +67,9 @@ Use only a disposition listed in `Allowed disposition values`.
 - `related` remains open and should reference the overlapping issue in the notes.
 - When closure evidence is weak, use `keep-open` or `needs-experienced-contributor`.
 
-Only add or remove labels from `Repository labels`. When the selected P1-P4 label and matching `Area: <functionalAreas>` labels exist and the issue remains open, include them in `labelsToAdd`. Do not add `Bug` or `Feature Request`; GitHub issue types classify those. Do not add and remove the same label. When recommending a closing disposition, `labelsToAdd` must be an empty array. Do not remove `Triage`; the action controls its lifecycle after successful triage.
+Only add or remove labels from `Repository labels`. When the selected P1-P4 label and matching `Area: <functionalAreas>` labels exist and the issue remains open, include them in `labelsToAdd`. Do not add `Bug` or `Feature Request`; GitHub issue types classify those. The action moves an issue from Bug to Feature when `issueType` is `Feature` and the supplied issue is currently Bug. Do not add and remove the same label. When recommending a closing disposition, `labelsToAdd` must be an empty array. Do not remove `Triage`; the action controls its lifecycle after successful triage.
 
-When evidence is insufficient, use `status: "unclear"`, state what information is missing in `statusReason` or `comment`, and use `keep-open`. Set both `labelsToAdd` and `labelsToRemove` to empty arrays. The action will retain `Triage` so the issue can be triaged after the missing information is provided.
+When evidence is insufficient, use `status: "unclear"`, state what information is missing in `statusReason` or `comment`, and use `keep-open`. Retain the current `issueType`. Set both `labelsToAdd` and `labelsToRemove` to empty arrays. The action will retain `Triage` so the issue can be triaged after the missing information is provided.
 
 # Comment Format
 
@@ -83,4 +90,4 @@ When `status` is `unclear`, the action omits the Effort and Priority rows. Do no
 
 # JSON Requirements
 
-Use exactly the schema requested in the user message. Every reason and `comment` must be non-empty, evidence-based strings with no em dash characters. `functionalAreas` must be a non-empty array of unique strings, with each value under 120 characters. `labelsToAdd` and `labelsToRemove` must be arrays of existing repository label names. `relatedIssueNumbers` must be an array of positive integers found in supplied related-issue evidence. Keep `comment` within the requested maximum length.
+Use exactly the schema requested in the user message. Every reason and `comment` must be non-empty, evidence-based strings with no em dash characters. `issueType` must be either `Bug` or `Feature`. `functionalAreas` must be a non-empty array of unique strings, with each value under 120 characters. `labelsToAdd` and `labelsToRemove` must be arrays of existing repository label names. `relatedIssueNumbers` must be an array of positive integers found in supplied related-issue evidence. Keep `comment` within the requested maximum length.

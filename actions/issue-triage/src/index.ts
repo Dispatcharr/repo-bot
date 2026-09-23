@@ -8,6 +8,7 @@ const VALID_PROVIDERS = ['auto', 'copilot', 'openai'] as const
 const VALID_STATUSES = ['still-an-issue', 'fixed-released', 'fixed-unreleased', 'unclear', 'working-as-designed', 'invalid', 'duplicate', 'related'] as const
 const VALID_EFFORTS = ['trivial', 'small', 'medium', 'large'] as const
 const VALID_PRIORITIES = ['P1', 'P2', 'P3', 'P4'] as const
+const VALID_ISSUE_TYPES = ['Bug', 'Feature'] as const
 const CLOSING_DISPOSITIONS = new Set(['close-completed', 'close-duplicate', 'close-not-planned', 'close-invalid', 'close-wontfix', 'close-stale', 'working-as-designed'])
 const ISSUE_TYPE_LABELS = new Set(['Bug', 'Feature Request'])
 
@@ -20,6 +21,7 @@ type TriageResult = {
   effortReason: string
   priority: typeof VALID_PRIORITIES[number]
   priorityReason: string
+  issueType: typeof VALID_ISSUE_TYPES[number]
   functionalAreas: string[]
   disposition: string
   dispositionReason: string
@@ -47,6 +49,11 @@ function parseNonNegativeInteger(input: string, name: string): number {
 
 function hasLabel(labels: Array<string | { name?: string | null }>, name: string): boolean {
   return labels.some(label => (typeof label === 'string' ? label : label.name) === name)
+}
+
+function issueTypeName(issue: unknown): string | null {
+  const type = (issue as { type?: { name?: unknown } | null }).type
+  return typeof type?.name === 'string' ? type.name : null
 }
 
 function markerComment(comment: { body?: string | null, user?: { login?: string | null } | null }, marker: string, botLogin: string): boolean {
@@ -196,12 +203,13 @@ function userPrompt(input: {
     'Return one JSON object with this exact shape:',
     JSON.stringify({
       status: 'one allowed status', statusReason: 'evidence-based string', effort: 'one allowed effort', effortReason: 'evidence-based string',
-      priority: 'one allowed priority', priorityReason: 'evidence-based string', functionalAreas: ['affected components or Unclear'], disposition: 'one allowed disposition', dispositionReason: 'evidence-based string',
+      priority: 'one allowed priority', priorityReason: 'evidence-based string', issueType: 'Bug or Feature', functionalAreas: ['affected components or Unclear'], disposition: 'one allowed disposition', dispositionReason: 'evidence-based string',
       labelsToAdd: ['repository label names'], labelsToRemove: ['repository label names'], relatedIssueNumbers: [123], comment: 'concise report',
     }, null, 2),
     `Allowed status values: ${VALID_STATUSES.join(', ')}`,
     `Allowed effort values: ${VALID_EFFORTS.join(', ')}`,
     `Allowed priority values: ${VALID_PRIORITIES.join(', ')}`,
+    `Allowed issue type values: ${VALID_ISSUE_TYPES.join(', ')}`,
     `Allowed disposition values: ${input.allowedDispositions.join(', ')}`,
     `Repository labels: ${JSON.stringify(input.labels)}`,
     quoteEvidence('issue', input.issue),
@@ -375,11 +383,13 @@ function validateResult(value: unknown, repositoryLabels: Set<string>, allowedDi
   const status = string('status') as TriageResult['status']
   const effort = string('effort') as TriageResult['effort']
   const priority = string('priority') as TriageResult['priority']
+  const issueType = string('issueType') as TriageResult['issueType']
   const functionalAreas = strings('functionalAreas')
   const disposition = string('disposition')
   if (!VALID_STATUSES.includes(status)) throw new Error(`Invalid status: ${status}`)
   if (!VALID_EFFORTS.includes(effort)) throw new Error(`Invalid effort: ${effort}`)
   if (!VALID_PRIORITIES.includes(priority)) throw new Error(`Invalid priority: ${priority}`)
+  if (!VALID_ISSUE_TYPES.includes(issueType)) throw new Error(`Invalid issue type: ${issueType}`)
   if (functionalAreas.some(area => area.length > 120)) throw new Error('Inference response functionalAreas contains a value exceeding 120 characters')
   if (!allowedDispositions.has(disposition)) throw new Error(`Invalid disposition: ${disposition}`)
   let labelsToAdd = strings('labelsToAdd')
@@ -398,7 +408,7 @@ function validateResult(value: unknown, repositoryLabels: Set<string>, allowedDi
   const comment = string('comment')
   if (comment.length > maxCommentLength) throw new Error(`Inference response comment exceeds max-comment-length (${maxCommentLength})`)
   if (comment.includes('<!--') || comment.includes(marker)) throw new Error('Inference response comment contains a reserved marker')
-  return { status, statusReason: string('statusReason'), effort, effortReason: string('effortReason'), priority, priorityReason: string('priorityReason'), functionalAreas, disposition, dispositionReason: string('dispositionReason'), labelsToAdd, labelsToRemove, relatedIssueNumbers: numbers('relatedIssueNumbers'), comment }
+  return { status, statusReason: string('statusReason'), effort, effortReason: string('effortReason'), priority, priorityReason: string('priorityReason'), issueType, functionalAreas, disposition, dispositionReason: string('dispositionReason'), labelsToAdd, labelsToRemove, relatedIssueNumbers: numbers('relatedIssueNumbers'), comment }
 }
 
 function tableCell(value: string): string {
@@ -415,6 +425,7 @@ async function run(): Promise<void> {
   const allowedDispositions = new Set(csv(core.getInput('allowed-dispositions')))
   if (allowedDispositions.size === 0) throw new Error('allowed-dispositions must not be empty')
   const allowLabelChanges = core.getBooleanInput('allow-label-changes')
+  const allowTypeChanges = core.getBooleanInput('allow-type-changes')
   const allowClose = core.getBooleanInput('allow-close')
   const allowRetriage = core.getBooleanInput('allow-retriage')
   const bypassForMembers = core.getBooleanInput('bypass-for-members')
@@ -467,7 +478,7 @@ async function run(): Promise<void> {
   const triageStartedAt = Date.now()
   core.info('Phase 2/2: requesting the triage assessment with prompts/triage.md')
   const inference = await requestInference(provider, core.getInput('provider-key'), core.getInput('provider-model'), core.getInput('provider-base-url'), core.getInput('copilot-cli-path'), core.getInput('copilot-cli-version'), prompt, userPrompt({
-    issue: { number: issue.number, title: issue.title, body: issue.body, createdAt: issue.created_at, updatedAt: issue.updated_at, labels: issue.labels.map(label => typeof label === 'string' ? label : label.name) },
+    issue: { number: issue.number, title: issue.title, body: issue.body, type: issueTypeName(issue), createdAt: issue.created_at, updatedAt: issue.updated_at, labels: issue.labels.map(label => typeof label === 'string' ? label : label.name) },
     comments: comments.map(comment => ({ author: comment.user?.login, createdAt: comment.created_at, body: comment.body })),
     labels: [...repositoryLabels],
     relatedIssues: relatedIssues.data.items.filter(item => contextRepository.owner !== owner || contextRepository.repo !== repoName || item.number !== issueNumber).map((item, index) => ({ number: item.number, title: item.title, state: item.state, body: index < 3 ? truncateContext(item.body ?? '', 6_000) : undefined, labels: item.labels })),
@@ -476,7 +487,9 @@ async function run(): Promise<void> {
   }), inferenceTimeoutSeconds, inferenceRetries)
   core.info(`Phase 2/2 complete in ${((Date.now() - triageStartedAt) / 1000).toFixed(1)}s. Validating model output`)
   const result = validateResult(inference, repositoryLabels, allowedDispositions, maxCommentLength, marker)
-  core.info(`Validated triage for issue #${issueNumber}: ${JSON.stringify({ status: result.status, effort: result.effort, priority: result.priority, functionalAreas: result.functionalAreas, disposition: result.disposition, labelsToAdd: result.labelsToAdd, labelsToRemove: result.labelsToRemove, relatedIssueNumbers: result.relatedIssueNumbers })}`)
+  const currentIssueType = issueTypeName(issue)
+  const moveToFeature = result.status !== 'unclear' && currentIssueType === 'Bug' && result.issueType === 'Feature'
+  core.info(`Validated triage for issue #${issueNumber}: ${JSON.stringify({ status: result.status, effort: result.effort, priority: result.priority, issueType: result.issueType, functionalAreas: result.functionalAreas, disposition: result.disposition, labelsToAdd: result.labelsToAdd, labelsToRemove: result.labelsToRemove, relatedIssueNumbers: result.relatedIssueNumbers })}`)
 
   const closing = CLOSING_DISPOSITIONS.has(result.disposition)
   const automaticLabels = [result.priority, ...result.functionalAreas.map(area => `Area: ${area}`)].filter(label => repositoryLabels.has(label))
@@ -498,6 +511,7 @@ async function run(): Promise<void> {
         [{ data: '', header: true }, { data: '', header: true }],
         ['Functional area', tableCell(functionalAreas)],
         ['Recommendation', tableCell(`${result.disposition}. ${result.dispositionReason}`)],
+        ['Issue type', tableCell(moveToFeature ? 'Feature (move from Bug)' : currentIssueType ?? result.issueType)],
         ['Details', tableCell(details)],
       ]
     : [
@@ -506,6 +520,7 @@ async function run(): Promise<void> {
         ['Functional area', tableCell(functionalAreas)],
         ['Priority', tableCell(`${result.priority}. ${result.priorityReason}`)],
         ['Recommendation', tableCell(`${result.disposition}. ${result.dispositionReason}`)],
+        ['Issue type', tableCell(moveToFeature ? 'Feature (move from Bug)' : currentIssueType ?? result.issueType)],
         ['Details', tableCell(details)],
       ]
   const report = `${reportTable}\n\n<!-- ${marker} -->`
@@ -513,6 +528,7 @@ async function run(): Promise<void> {
   if (dryRun) {
     core.info(`[dry-run] Would add labels: ${labelsToAdd.join(', ') || '(none)'}`)
     core.info(`[dry-run] Would remove labels: ${[...new Set([...result.labelsToRemove, ...(result.status === 'unclear' ? [] : [triageLabel])])].join(', ') || '(none)'}`)
+    core.info(`[dry-run] Would change issue type: ${moveToFeature && allowTypeChanges ? 'Bug to Feature' : '(none)'}`)
     core.info(`[dry-run] Would close: ${allowClose && closing}`)
     return
   }
@@ -520,6 +536,7 @@ async function run(): Promise<void> {
   if (allowLabelChanges) {
     for (const label of result.labelsToRemove.filter(label => label !== triageLabel)) await octokit.rest.issues.removeLabel({ owner, repo: repoName, issue_number: issueNumber, name: label })
   }
+  if (allowTypeChanges && moveToFeature) await octokit.rest.issues.update({ owner, repo: repoName, issue_number: issueNumber, type: 'Feature' })
   await octokit.rest.issues.createComment({ owner, repo: repoName, issue_number: issueNumber, body: report })
   if (allowClose && closing) {
     if (duplicateIssueNumber) {

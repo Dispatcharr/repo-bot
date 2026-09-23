@@ -59,6 +59,10 @@ inputs:
     description: "Apply validated label additions and removals."
     required: false
     default: 'true'
+  allow-type-changes:
+    description: "Move confirmed Bug issues to the Feature issue type."
+    required: false
+    default: 'true'
   allow-close:
     description: "Close issues when the validated disposition is a closing disposition."
     required: false
