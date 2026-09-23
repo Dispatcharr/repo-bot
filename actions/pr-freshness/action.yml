@@ -22,6 +22,10 @@ inputs:
     description: 'Treat merge conflicts as an eligibility reason'
     required: false
     default: 'true'
+  conflict-ignore-patterns:
+    description: 'Comma-separated glob patterns for files ignored by the merge conflict check. A conflict is ignored only when every changed file matches.'
+    required: false
+    default: '*.md'
   check-changes-requested:
     description: 'Treat an effective CHANGES_REQUESTED review as an eligibility reason'
     required: false

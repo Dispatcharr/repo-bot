@@ -194,6 +194,7 @@ uses: Dispatcharr/repo-bot/actions/pr-freshness@v1
 | `days-before-close` | yes | | Whole days after the warning before enforcement |
 | `stale-label` | no | `stale` | Label applied while waiting for author activity |
 | `check-conflicts` | no | `true` | Treat merge conflicts as an eligibility reason |
+| `conflict-ignore-patterns` | no | `*.md` | Comma-separated globs for files ignored by the conflict check; a conflict is ignored only if every changed file matches |
 | `check-changes-requested` | no | `true` | Treat an effective `CHANGES_REQUESTED` review as an eligibility reason |
 | `check-maintainer-responded-stale` | no | `true` | Allow generic inactivity only after a collaborator review or comment |
 | `check-compliance` | no | `false` | Treat a matching unresolved `template-enforcer` compliance marker as an eligibility reason |
@@ -205,7 +206,7 @@ uses: Dispatcharr/repo-bot/actions/pr-freshness@v1
 | `close-message` | no | built-in message | Enforcement comment; supports `{pr-number}` and `{reasons}` |
 | `dry-run` | no | `false` | Log intended changes without modifying GitHub state |
 
-The action tracks warnings with its own label and hidden comment marker. It only recognizes, deletes, or uses markers on comments authored by the authenticated bot account. It also uses a hidden comment marker to measure how long a merge conflict has persisted, beginning when the action first observes the conflict and deleting the marker once resolved. A comment, commit, edit, or reopen by the PR author removes the warning label and comment. Author activity after a changes-requested review clears that review condition until a maintainer requests changes again. Maintainer activity does not. It never deletes source branches. Closed PRs can be reopened.
+The action tracks warnings with its own label and hidden comment marker. It only recognizes, deletes, or uses markers on comments authored by the authenticated bot account. For merge conflicts, it posts a visible request to resolve the conflict followed by a hidden marker, beginning the timer when the action first observes the conflict and deleting the comment once resolved. By default, conflicts on PRs that only change Markdown files are ignored. Set `conflict-ignore-patterns` to an empty value to check all files. A comment, commit, edit, or reopen by the PR author removes the warning label and comment. Author activity after a changes-requested review clears that review condition until a maintainer requests changes again. Maintainer activity does not. It never deletes source branches. Closed PRs can be reopened.
 
 When `check-compliance` is enabled, a matching bot-authored marker emitted by `template-enforcer` is another eligibility reason. It remains active until the compliance comment is removed or replaced without the marker. Author activity after the marker resets its inactivity timer without resolving the compliance condition.
 
