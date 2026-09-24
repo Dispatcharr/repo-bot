@@ -64,6 +64,7 @@ Use only a disposition listed in `Allowed disposition values`.
 - `close-completed` requires `fixed-released`. Never close an issue merely because the fix is unreleased.
 - When a supplied related issue has the same underlying defect or requested change and materially the same scope, classify the newer issue as `duplicate` and use `close-duplicate`. Do not require byte-identical wording or reproduction steps. Do not use `keep-open` merely because the canonical issue remains open.
 - Review each related issue's `stateReason`, closure date, and supplied comments before treating it as canonical. A bot comment that closes an issue for missing templates, formatting, intake process, or insufficient submission details means that issue was not substantively triaged and cannot be used as a duplicate. Keep the newer issue open instead.
+- Do not mention a related issue that was rejected as a canonical duplicate in `statusReason` or `comment`. Discuss it only when it is relevant to the selected disposition.
 - `close-duplicate` requires exactly one actual supplied canonical issue number in `relatedIssueNumbers`.
 - `related` remains open and should reference the overlapping issue in the notes.
 - When closure evidence is weak, use `keep-open` or `needs-experienced-contributor`.
