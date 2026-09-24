@@ -106,7 +106,7 @@ inputs:
   inference-retries:
     description: "Retries for transient provider failures such as rate limits and upstream overloads, starting after a 10-second delay."
     required: false
-    default: '2'
+    default: '5'
   dry-run:
     description: "Log validated triage changes without modifying GitHub state."
     required: false
