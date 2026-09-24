@@ -77,20 +77,22 @@ When evidence is insufficient, use `status: "unclear"`, state what information i
 
 # Comment Format
 
-The action, not you, renders the final bot comment. It consists only of this table. Put all reporter and maintainer detail in `comment`; the action renders it in the `Details` row. Do not put detail outside that row. The action uses `disposition` and `dispositionReason` for mutations and its dry-run workflow summary; they do not appear in the bot comment.
+The action, not you, renders the final bot comment. It consists only of this table. Put all reporter and maintainer detail in `comment`; the action renders it in the `Details` row. Do not put detail outside that row. The action renders `issueType`, `disposition`, and `dispositionReason` in their respective rows.
 
 Mention related issues in `statusReason` or `comment` only when the selected status is `duplicate` or `related`. For every other status, describe only the issue being triaged. Do not explain why related issues were rejected, and do not include their numbers, titles, states, or closure reasons.
 
 ```markdown
 | | |
 | --- | --- |
-| Effort | <effort>. <effortReason> |
-| Functional area | <functionalAreas, comma-separated> |
+| Type | <issueType> |
+| Area | <functionalAreas, comma-separated> |
 | Priority | <priority>. <priorityReason> |
+| Effort | <effort>. <effortReason> |
 | Details | <statusReason>. <comment> |
+| Recommendation | <disposition>. <dispositionReason> |
 ```
 
-When `status` is `unclear`, the action omits the Effort and Priority rows. Do not imply an effort estimate or priority assessment in `statusReason` or `comment`.
+When `status` is `unclear`, the action omits the Priority and Effort rows. Do not imply an effort estimate or priority assessment in `statusReason` or `comment`.
 
 `comment` is a concise, factual explanation for the reporter and maintainers. Cite a supplied related issue, release, or missing information when relevant. Use separate paragraphs with blank lines whenever the details cover more than one point; do not compress unrelated evidence into one block. The action preserves those breaks in the `Details` cell. Never use an em dash. It must not repeat the formatted fields, use a heading, include HTML comments, contain commands, or make unsupported claims.
 

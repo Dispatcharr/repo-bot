@@ -533,25 +533,26 @@ async function run(): Promise<void> {
   }
   const details = `${result.statusReason}\n\n${result.comment}`
   const functionalAreas = result.functionalAreas.join(', ')
+  const issueType = moveToFeature ? 'Feature (move from Bug)' : currentIssueType ?? result.issueType
   const reportTable = result.status === 'unclear'
-    ? `| | |\n| --- | --- |\n| Functional area | ${tableCell(functionalAreas)} |\n| Details | ${tableCell(details)} |`
-    : `| | |\n| --- | --- |\n| Effort | ${tableCell(result.effort)}. ${tableCell(result.effortReason)} |\n| Functional area | ${tableCell(functionalAreas)} |\n| Priority | ${tableCell(result.priority)}. ${tableCell(result.priorityReason)} |\n| Details | ${tableCell(details)} |`
+    ? `| | |\n| --- | --- |\n| Type | ${tableCell(issueType)} |\n| Area | ${tableCell(functionalAreas)} |\n| Details | ${tableCell(details)} |\n| Recommendation | ${tableCell(`${result.disposition}. ${result.dispositionReason}`)} |`
+    : `| | |\n| --- | --- |\n| Type | ${tableCell(issueType)} |\n| Area | ${tableCell(functionalAreas)} |\n| Priority | ${tableCell(result.priority)}. ${tableCell(result.priorityReason)} |\n| Effort | ${tableCell(result.effort)}. ${tableCell(result.effortReason)} |\n| Details | ${tableCell(details)} |\n| Recommendation | ${tableCell(`${result.disposition}. ${result.dispositionReason}`)} |`
   const summaryTable = result.status === 'unclear'
     ? [
         [{ data: '', header: true }, { data: '', header: true }],
-        ['Functional area', tableCell(functionalAreas)],
-        ['Recommendation', tableCell(`${result.disposition}. ${result.dispositionReason}`)],
-        ['Issue type', tableCell(moveToFeature ? 'Feature (move from Bug)' : currentIssueType ?? result.issueType)],
+        ['Type', tableCell(issueType)],
+        ['Area', tableCell(functionalAreas)],
         ['Details', tableCell(details)],
+        ['Recommendation', tableCell(`${result.disposition}. ${result.dispositionReason}`)],
       ]
     : [
         [{ data: '', header: true }, { data: '', header: true }],
-        ['Effort', tableCell(`${result.effort}. ${result.effortReason}`)],
-        ['Functional area', tableCell(functionalAreas)],
+        ['Type', tableCell(issueType)],
+        ['Area', tableCell(functionalAreas)],
         ['Priority', tableCell(`${result.priority}. ${result.priorityReason}`)],
-        ['Recommendation', tableCell(`${result.disposition}. ${result.dispositionReason}`)],
-        ['Issue type', tableCell(moveToFeature ? 'Feature (move from Bug)' : currentIssueType ?? result.issueType)],
+        ['Effort', tableCell(`${result.effort}. ${result.effortReason}`)],
         ['Details', tableCell(details)],
+        ['Recommendation', tableCell(`${result.disposition}. ${result.dispositionReason}`)],
       ]
   const report = `${reportTable}\n\n<!-- ${marker} -->`
   await core.summary.addHeading(`Issue triage: #${issueNumber}`).addTable(summaryTable).addRaw(dryRun ? '\n\n*Dry run: no changes were applied.*' : '').write()
