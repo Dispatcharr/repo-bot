@@ -191,6 +191,30 @@ async function collectRepositoryContext(
   }
 }
 
+async function collectRelatedIssueEvidence(octokit: Octokit, owner: string, repo: string, issues: Array<{ number: number, title: string, state: string, body?: string | null, labels: unknown }>): Promise<unknown[]> {
+  return Promise.all(issues.map(async (candidate, index) => {
+    try {
+      const { data: issue } = await octokit.rest.issues.get({ owner, repo, issue_number: candidate.number })
+      const comments = issue.comments
+        ? (await octokit.rest.issues.listComments({ owner, repo, issue_number: candidate.number, sort: 'created', direction: 'desc', per_page: 3 })).data.reverse()
+        : []
+      return {
+        number: issue.number,
+        title: issue.title,
+        state: issue.state,
+        stateReason: issue.state_reason,
+        closedAt: issue.closed_at,
+        body: index < 3 ? truncateContext(issue.body ?? candidate.body ?? '', 6_000) : undefined,
+        labels: issue.labels,
+        comments: comments.map(comment => ({ author: comment.user?.login, createdAt: comment.created_at, body: truncateContext(comment.body ?? '', 2_000) })),
+      }
+    } catch {
+      core.warning(`Related issue #${candidate.number} could not be loaded; using search metadata only`)
+      return { ...candidate, body: index < 3 ? truncateContext(candidate.body ?? '', 6_000) : undefined, comments: [] }
+    }
+  }))
+}
+
 function userPrompt(input: {
   issue: unknown
   comments: unknown
@@ -474,6 +498,12 @@ async function run(): Promise<void> {
     readPrompt(core.getInput('prompt-file')),
   ])
   const repositoryLabels = new Set(labels.map(label => label.name))
+  const relatedIssueEvidence = await collectRelatedIssueEvidence(
+    octokit,
+    contextRepository.owner,
+    contextRepository.repo,
+    relatedIssues.data.items.filter(item => contextRepository.owner !== owner || contextRepository.repo !== repoName || item.number !== issueNumber),
+  )
   core.info(`Phase 1/2 complete in ${((Date.now() - contextStartedAt) / 1000).toFixed(1)}s. Collected ${Object.keys(contextFiles).length} context file(s), ${relatedIssues.data.items.length} related issue candidate(s), and ${repositoryLabels.size} label(s)`)
   const triageStartedAt = Date.now()
   core.info('Phase 2/2: requesting the triage assessment with prompts/triage.md')
@@ -481,7 +511,7 @@ async function run(): Promise<void> {
     issue: { number: issue.number, title: issue.title, body: issue.body, type: issueTypeName(issue), createdAt: issue.created_at, updatedAt: issue.updated_at, labels: issue.labels.map(label => typeof label === 'string' ? label : label.name) },
     comments: comments.map(comment => ({ author: comment.user?.login, createdAt: comment.created_at, body: comment.body })),
     labels: [...repositoryLabels],
-    relatedIssues: relatedIssues.data.items.filter(item => contextRepository.owner !== owner || contextRepository.repo !== repoName || item.number !== issueNumber).map((item, index) => ({ number: item.number, title: item.title, state: item.state, body: index < 3 ? truncateContext(item.body ?? '', 6_000) : undefined, labels: item.labels })),
+    relatedIssues: relatedIssueEvidence,
     contextFiles,
     allowedDispositions: [...allowedDispositions],
   }), inferenceTimeoutSeconds, inferenceRetries)
