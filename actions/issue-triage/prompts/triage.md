@@ -64,7 +64,6 @@ Use only a disposition listed in `Allowed disposition values`.
 - `close-completed` requires `fixed-released`. Never close an issue merely because the fix is unreleased.
 - When a supplied related issue has the same underlying defect or requested change and materially the same scope, classify the newer issue as `duplicate` and use `close-duplicate`. Do not require byte-identical wording or reproduction steps. Do not use `keep-open` merely because the canonical issue remains open.
 - Review each related issue's `stateReason`, closure date, and supplied comments before treating it as canonical. A bot comment that closes an issue for missing templates, formatting, intake process, or insufficient submission details means that issue was not substantively triaged and cannot be used as a duplicate. Keep the newer issue open instead.
-- Never mention a related issue that was rejected as a canonical duplicate in `statusReason` or `comment`.
 - `close-duplicate` requires exactly one actual supplied canonical issue number in `relatedIssueNumbers`.
 - `related` remains open and should reference the overlapping issue in the notes.
 - When closure evidence is weak, use `keep-open` or `needs-experienced-contributor`.
@@ -76,6 +75,8 @@ When evidence is insufficient, use `status: "unclear"`, state what information i
 # Comment Format
 
 The action, not you, renders the final bot comment. It consists only of this table. Put all reporter and maintainer detail in `comment`; the action renders it in the `Details` row. Do not put detail outside that row. The action uses `disposition` and `dispositionReason` for mutations and its dry-run workflow summary; they do not appear in the bot comment.
+
+Mention related issues in `statusReason` or `comment` only when the selected status is `duplicate` or `related`. For every other status, describe only the issue being triaged. Do not explain why related issues were rejected, and do not include their numbers, titles, states, or closure reasons.
 
 ```markdown
 | | |

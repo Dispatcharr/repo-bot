@@ -439,12 +439,6 @@ function tableCell(value: string): string {
   return value.replace(/\|/g, '\\|').replace(/\r?\n/g, '<br>')
 }
 
-function omitRejectedRelatedIssueReferences(value: string, issueNumbers: number[]): string {
-  if (issueNumbers.length === 0) return value
-  const issueReference = new RegExp(`(?:issue\\s+)?#(?:${issueNumbers.join('|')})\\b`, 'i')
-  return value.split(/(?<=[.!?])\s+/).filter(sentence => !issueReference.test(sentence)).join(' ').trim()
-}
-
 async function run(): Promise<void> {
   const token = core.getInput('github-token', { required: true })
   const botLogin = core.getInput('bot-login', { required: true })
@@ -537,16 +531,7 @@ async function run(): Promise<void> {
   if (result.disposition === 'close-duplicate' && (result.relatedIssueNumbers.length !== 1 || !relatedIssues.data.items.some(item => item.number === duplicateIssueNumber))) {
     throw new Error('close-duplicate requires exactly one supplied related canonical issue number')
   }
-  const relatedIssueNumbers = relatedIssues.data.items
-    .filter(item => contextRepository.owner !== owner || contextRepository.repo !== repoName || item.number !== issueNumber)
-    .map(item => item.number)
-  const acceptedRelatedIssueNumbers = result.disposition === 'close-duplicate' || result.status === 'related'
-    ? new Set(result.relatedIssueNumbers)
-    : new Set<number>()
-  const rejectedRelatedIssueNumbers = relatedIssueNumbers.filter(number => !acceptedRelatedIssueNumbers.has(number))
-  const statusReason = omitRejectedRelatedIssueReferences(result.statusReason, rejectedRelatedIssueNumbers)
-  const comment = omitRejectedRelatedIssueReferences(result.comment, rejectedRelatedIssueNumbers)
-  const details = comment ? `${statusReason}\n\n${comment}` : statusReason
+  const details = `${result.statusReason}\n\n${result.comment}`
   const functionalAreas = result.functionalAreas.join(', ')
   const reportTable = result.status === 'unclear'
     ? `| | |\n| --- | --- |\n| Functional area | ${tableCell(functionalAreas)} |\n| Details | ${tableCell(details)} |`
