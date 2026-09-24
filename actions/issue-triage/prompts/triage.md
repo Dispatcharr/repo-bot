@@ -71,7 +71,7 @@ Use only a disposition listed in `Allowed disposition values`.
 - `related` remains open and should reference the overlapping issue in the notes.
 - When closure evidence is weak, use `keep-open` or `needs-experienced-contributor`.
 
-Only add or remove labels from `Repository labels`. When the selected P1-P4 label and matching `Area: <functionalAreas>` labels exist and the issue remains open, include them in `labelsToAdd`. Do not add `Bug` or `Feature Request`; GitHub issue types classify those. The action moves an issue from Bug to Feature when `issueType` is `Feature` and the supplied issue is currently Bug. Do not add and remove the same label. When recommending a closing disposition, `labelsToAdd` must be an empty array. Do not remove `Triage`; the action controls its lifecycle after successful triage.
+Only add or remove labels from `Repository labels`. When the selected effort, P1-P4, and matching `Area: <functionalAreas>` labels exist and the issue remains open, include them in `labelsToAdd`. Do not add `Bug` or `Feature Request`; GitHub issue types classify those. The action moves an issue from Bug to Feature when `issueType` is `Feature` and the supplied issue is currently Bug. Do not add and remove the same label. When recommending a closing disposition, `labelsToAdd` must be an empty array. Do not remove `Triage`; the action controls its lifecycle after successful triage.
 
 When evidence is insufficient, use `status: "unclear"`, state what information is missing in `statusReason` or `comment`, and use `keep-open`. Retain the current `issueType`. Set both `labelsToAdd` and `labelsToRemove` to empty arrays. The action will retain `Triage` so the issue can be triaged after the missing information is provided.
 

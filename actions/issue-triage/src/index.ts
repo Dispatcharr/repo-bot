@@ -522,7 +522,7 @@ async function run(): Promise<void> {
   core.info(`Validated triage for issue #${issueNumber}: ${JSON.stringify({ status: result.status, effort: result.effort, priority: result.priority, issueType: result.issueType, functionalAreas: result.functionalAreas, disposition: result.disposition, labelsToAdd: result.labelsToAdd, labelsToRemove: result.labelsToRemove, relatedIssueNumbers: result.relatedIssueNumbers })}`)
 
   const closing = CLOSING_DISPOSITIONS.has(result.disposition)
-  const automaticLabels = [result.priority, ...result.functionalAreas.map(area => `Area: ${area}`)].filter(label => repositoryLabels.has(label))
+  const automaticLabels = [result.effort, result.priority, ...result.functionalAreas.map(area => `Area: ${area}`)].filter(label => repositoryLabels.has(label))
   const labelsToAdd = closing || result.status === 'unclear'
     ? []
     : [...new Set([...result.labelsToAdd.filter(label => !ISSUE_TYPE_LABELS.has(label)), ...automaticLabels])]
