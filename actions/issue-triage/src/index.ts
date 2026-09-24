@@ -6,7 +6,7 @@ import { resolve } from 'node:path'
 
 const VALID_PROVIDERS = ['auto', 'copilot', 'openai'] as const
 const VALID_STATUSES = ['still-an-issue', 'fixed-released', 'fixed-unreleased', 'unclear', 'working-as-designed', 'invalid', 'duplicate', 'related'] as const
-const VALID_EFFORTS = ['trivial', 'small', 'medium', 'large'] as const
+const VALID_EFFORTS = ['XS', 'S', 'M', 'L', 'XL'] as const
 const VALID_PRIORITIES = ['P1', 'P2', 'P3', 'P4'] as const
 const VALID_ISSUE_TYPES = ['Bug', 'Feature'] as const
 const CLOSING_DISPOSITIONS = new Set(['close-completed', 'close-duplicate', 'close-not-planned', 'close-invalid', 'close-wontfix', 'close-stale', 'working-as-designed'])

@@ -41,10 +41,13 @@ Use the current issue type from the supplied issue evidence. Do not recommend ch
 
 Choose exactly one `effort` based on demonstrated scope:
 
-- `trivial`: Copy, configuration, or an isolated narrowly scoped change.
-- `small`: A localized component change.
-- `medium`: Multiple components, new tests, or a migration.
-- `large`: Cross-cutting work, core infrastructure, or a product/design decision.
+- `XS`: Copy, configuration, or an isolated narrowly scoped change.
+- `S`: A localized component change.
+- `M`: Multiple components, new tests, or a migration.
+- `L`: Cross-cutting work or core infrastructure.
+- `XL`: Broad infrastructure work, a major migration, or a product/design decision.
+
+Use `S` only when the work is demonstrably limited to one localized component. When scope is uncertain between `S` and `M`, choose `M`.
 
 Choose exactly one `priority`:
 
