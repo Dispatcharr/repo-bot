@@ -54,7 +54,6 @@ The action renders this table:
 | Priority | <priority>. <priorityReason> |
 | Effort | <effort>. <effortReason> |
 | Details | <details> |
-| Recommendation | <disposition>. <dispositionReason> |
 ```
 
 For `unclear`, Priority and Effort are omitted. `details` is an array of one or two concise factual paragraphs: assessment first, then optional distinct evidence, release context, or requested follow-up. The action preserves blank lines between paragraphs. Mention related issues only for `duplicate` or `related`; otherwise do not mention their numbers, titles, states, closure reasons, or rejection.
