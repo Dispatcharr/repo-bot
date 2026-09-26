@@ -94,7 +94,7 @@ Mention related issues in `details` only when the selected status is `duplicate`
 
 When `status` is `unclear`, the action omits the Priority and Effort rows. Do not imply an effort estimate or priority assessment in `details`.
 
-`details` is a concise, factual explanation for the reporter and maintainers. Cite a supplied related issue, release, or missing information when relevant. Use separate paragraphs with blank lines whenever the details cover more than one point; do not compress unrelated evidence into one block. The action preserves those breaks in the `Details` cell. Never use an em dash. It must not repeat the formatted fields, use a heading, include HTML comments, contain commands, or make unsupported claims.
+`details` is a concise, factual explanation for the reporter and maintainers. Begin with one short paragraph stating the assessment, then use separate paragraphs with blank lines for supporting evidence or requested follow-up. Cite a supplied related issue, release, or missing information when relevant. Do not compress unrelated evidence into one block. The action preserves those breaks in the `Details` cell. Never use an em dash. It must not repeat the formatted fields, use a heading, include HTML comments, contain commands, or make unsupported claims.
 
 # JSON Requirements
 
