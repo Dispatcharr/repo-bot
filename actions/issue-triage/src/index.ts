@@ -476,6 +476,7 @@ async function run(): Promise<void> {
   const maxCommentLength = parsePositiveInteger(core.getInput('max-comment-length'), 'max-comment-length')
   const inferenceTimeoutSeconds = parsePositiveInteger(core.getInput('inference-timeout-seconds'), 'inference-timeout-seconds')
   const inferenceRetries = parseNonNegativeInteger(core.getInput('inference-retries'), 'inference-retries')
+  const validationRetries = parseNonNegativeInteger(core.getInput('validation-retries'), 'validation-retries')
   const { eventName, payload, repo } = github.context
   if (eventName !== 'issues' || !payload.issue) return core.info('Issue Triage only runs on issue events')
   const eventAction = payload.action
@@ -525,16 +526,30 @@ async function run(): Promise<void> {
   core.info(`Phase 1/2 complete in ${((Date.now() - contextStartedAt) / 1000).toFixed(1)}s. Collected ${Object.keys(contextFiles).length} context file(s), ${relatedIssues.length} related issue candidate(s), and ${repositoryLabels.size} label(s)`)
   const triageStartedAt = Date.now()
   core.info('Phase 2/2: requesting the triage assessment with prompts/triage.md')
-  const inference = await requestInference(provider, core.getInput('provider-key'), core.getInput('provider-model'), core.getInput('provider-base-url'), core.getInput('copilot-cli-path'), core.getInput('copilot-cli-version'), prompt, userPrompt({
+  const assessmentPrompt = userPrompt({
     issue: { number: issue.number, title: issue.title, body: issue.body, type: issueTypeName(issue), createdAt: issue.created_at, updatedAt: issue.updated_at, labels: issue.labels.map(label => typeof label === 'string' ? label : label.name) },
     comments: comments.map(comment => ({ author: comment.user?.login, createdAt: comment.created_at, body: comment.body })),
     labels: [...repositoryLabels],
     relatedIssues: relatedIssueEvidence,
     contextFiles,
     allowedDispositions: [...allowedDispositions],
-  }), inferenceTimeoutSeconds, inferenceRetries)
-  core.info(`Phase 2/2 complete in ${((Date.now() - triageStartedAt) / 1000).toFixed(1)}s. Validating model output`)
-  const result = validateResult(inference, repositoryLabels, allowedDispositions, maxCommentLength, marker)
+  })
+  let result: TriageResult | undefined
+  let validationError = ''
+  for (let attempt = 0; attempt <= validationRetries; attempt++) {
+    const correction = attempt === 0 ? '' : `\n\n<untrusted-evidence source="validation-feedback">\n${validationError}\n</untrusted-evidence>\nYour previous response failed validation. Return a corrected JSON object that satisfies the requested schema and all instructions.`
+    const inference = await requestInference(provider, core.getInput('provider-key'), core.getInput('provider-model'), core.getInput('provider-base-url'), core.getInput('copilot-cli-path'), core.getInput('copilot-cli-version'), prompt, `${assessmentPrompt}${correction}`, inferenceTimeoutSeconds, inferenceRetries)
+    try {
+      result = validateResult(inference, repositoryLabels, allowedDispositions, maxCommentLength, marker)
+      break
+    } catch (error) {
+      validationError = (error as Error).message
+      if (attempt === validationRetries) throw error
+      core.warning(`Inference response failed validation: ${validationError}. Requesting a corrected response (${attempt + 1}/${validationRetries})`)
+    }
+  }
+  if (!result) throw new Error('Inference response validation did not produce a result')
+  core.info(`Phase 2/2 complete in ${((Date.now() - triageStartedAt) / 1000).toFixed(1)}s. Validated model output`)
   const currentIssueType = issueTypeName(issue)
   const moveToFeature = result.status !== 'unclear' && currentIssueType === 'Bug' && result.issueType === 'Feature'
   core.info(`Validated triage for issue #${issueNumber}: ${JSON.stringify({ status: result.status, effort: result.effort, priority: result.priority, issueType: result.issueType, functionalAreas: result.functionalAreas, disposition: result.disposition, labelsToAdd: result.labelsToAdd, labelsToRemove: result.labelsToRemove, relatedIssueNumbers: result.relatedIssueNumbers })}`)

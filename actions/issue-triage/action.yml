@@ -107,6 +107,10 @@ inputs:
     description: "Retries for transient provider failures such as rate limits and upstream overloads, starting after a 10-second delay."
     required: false
     default: '5'
+  validation-retries:
+    description: "Corrective inference requests after a response fails local schema or content validation."
+    required: false
+    default: '3'
   dry-run:
     description: "Log validated triage changes without modifying GitHub state."
     required: false

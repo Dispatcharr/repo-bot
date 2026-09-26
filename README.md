@@ -287,6 +287,7 @@ uses: Dispatcharr/repo-bot/actions/issue-triage@v1
 | `max-comment-length` | no | `4000` | Maximum model-provided details length. |
 | `inference-timeout-seconds` | no | `300` | Maximum time for each provider inference request. |
 | `inference-retries` | no | `5` | Retries for transient provider rate-limit, upstream-overload, and 5xx failures, starting after 10 seconds. |
+| `validation-retries` | no | `3` | Corrective inference requests after a response fails local schema or content validation. |
 | `dry-run` | no | `false` | Skip issue mutations. Every run writes its rendered assessment to the workflow summary. |
 
 After successful processing, the action removes the trigger label unless evidence is insufficient. Issues with unclear evidence retain the label for later retriage.
