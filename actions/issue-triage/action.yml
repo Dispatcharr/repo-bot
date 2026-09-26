@@ -1,0 +1,120 @@
+name: 'Issue Triage'
+description: "Automatically triages labeled issues using repository context and a configured AI provider"
+inputs:
+  github-token:
+    description: "GitHub App installation token with Issues read/write and Metadata read permission"
+    required: true
+  bot-login:
+    description: "GitHub App bot login that owns this action's comments, for example my-app[bot]."
+    required: true
+  provider:
+    description: "Inference provider: auto, copilot, or openai. Auto selects Copilot for a GitHub token and OpenAI otherwise."
+    required: false
+    default: 'auto'
+  provider-key:
+    description: "Inference credential. For Copilot, pass the workflow GITHUB_TOKEN with copilot-requests: write; for OpenAI, pass the provider API key."
+    required: false
+    default: ''
+  provider-model:
+    description: "Inference model ID. Required for OpenAI; defaults to Copilot auto routing when blank."
+    required: false
+    default: ''
+  provider-base-url:
+    description: "OpenAI-compatible API base URL."
+    required: false
+    default: 'https://api.openai.com/v1'
+  copilot-cli-path:
+    description: "Optional Copilot CLI executable path. When blank, the action installs the configured Copilot CLI version in the runner temporary directory."
+    required: false
+    default: ''
+  copilot-cli-version:
+    description: "Copilot CLI npm version to install when copilot-cli-path is blank. Use latest or an exact semver version."
+    required: false
+    default: 'latest'
+  prompt-file:
+    description: "Path to the triage system prompt. Blank uses this action's bundled prompts/triage.md; a relative path is resolved from the calling repository workspace."
+    required: false
+    default: ''
+  triage-label:
+    description: "Label that triggers triage."
+    required: false
+    default: 'Triage'
+  completion-marker:
+    description: "Unique marker added to this action's report comment to prevent duplicate triage."
+    required: false
+    default: 'repo-bot:issue-triage'
+  context-repository:
+    description: "Optional owner/repository used for related-issue search and context-files. Blank uses the calling repository; issue mutations always target the calling repository."
+    required: false
+    default: ''
+  context-branch:
+    description: "Branch used for context-files or automatic repository search. Blank uses the context repository default branch."
+    required: false
+    default: ''
+  allowed-dispositions:
+    description: "Comma-separated disposition values the model may recommend."
+    required: false
+    default: 'keep-open,needs-experienced-contributor,close-completed,close-duplicate,close-not-planned,close-invalid,close-wontfix,close-stale,working-as-designed'
+  allow-label-changes:
+    description: "Apply validated label additions and removals."
+    required: false
+    default: 'true'
+  allow-type-changes:
+    description: "Move confirmed Bug issues to the Feature issue type."
+    required: false
+    default: 'true'
+  allow-close:
+    description: "Close issues when the validated disposition is a closing disposition."
+    required: false
+    default: 'true'
+  allow-retriage:
+    description: "Allow a newly applied triage label to reprocess an issue that already has this bot's completion marker."
+    required: false
+    default: 'false'
+  bypass-for-members:
+    description: "Skip issues opened by repository collaborators."
+    required: false
+    default: 'false'
+  context-files:
+    description: "Comma-separated repository-relative text files to include as untrusted context, in addition to issue-relevant code search results."
+    required: false
+    default: ''
+  max-context-bytes:
+    description: "Maximum UTF-8 bytes read from each context file."
+    required: false
+    default: '40000'
+  max-context-total-bytes:
+    description: "Maximum UTF-8 bytes included across all supplemental repository context files."
+    required: false
+    default: '60000'
+  max-context-files:
+    description: "Maximum repository files included from automatic context search."
+    required: false
+    default: '10'
+  max-related-issues:
+    description: "Maximum related issue search results included as context."
+    required: false
+    default: '10'
+  max-comment-length:
+    description: "Maximum characters in the model-provided triage details before the action marker is appended."
+    required: false
+    default: '4000'
+  inference-timeout-seconds:
+    description: "Maximum seconds to wait for each provider inference request."
+    required: false
+    default: '300'
+  inference-retries:
+    description: "Retries for transient provider failures such as rate limits and upstream overloads, starting after a 10-second delay."
+    required: false
+    default: '5'
+  validation-retries:
+    description: "Corrective inference requests after a response fails local schema or content validation."
+    required: false
+    default: '3'
+  dry-run:
+    description: "Log validated triage changes without modifying GitHub state."
+    required: false
+    default: 'false'
+runs:
+  using: 'node24'
+  main: 'dist/index.js'

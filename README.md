@@ -226,6 +226,8 @@ jobs:
   freshness:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+
       - uses: actions/create-github-app-token@v2
         id: app-token
         with:
@@ -244,6 +246,98 @@ jobs:
 ```
 
 For a safe first run, set `dry-run: true`, inspect the logs, then remove it. The GitHub App needs Metadata read plus Pull requests and Issues read/write permissions. The action only inspects API metadata and never checks out PR code.
+
+---
+
+### issue-triage
+
+Uses a configured AI provider to assess an issue carrying a triage label. It uses deterministic issue terms to search for relevant code, then gathers the issue, comments, repository labels, related issue search results, and configured repository files. The model returns a validated recommendation only. The action, using the supplied GitHub App token, performs the allowed label, comment, and close changes.
+
+```
+uses: Dispatcharr/repo-bot/actions/issue-triage@v1
+```
+
+#### Inputs
+
+| Input | Required | Default | Description |
+|-------|----------|---------|-------------|
+| `github-token` | yes | | Bot installation token with Metadata and Issues read/write permission |
+| `bot-login` | yes | | GitHub App bot login that owns triage comments, such as `my-app[bot]`. |
+| `provider` | no | `auto` | `auto`, `copilot`, or `openai`. `auto` selects Copilot for a GitHub token and OpenAI otherwise. |
+| `provider-key` | yes | | For Copilot, the workflow `github.token`; for OpenAI, a provider API key stored as a consuming-repository secret. |
+| `provider-model` | for OpenAI | | Provider model ID. Copilot uses `auto` when blank. |
+| `provider-base-url` | no | OpenAI API URL | OpenAI-compatible API base URL. |
+| `copilot-cli-path` | no | `''` | Optional Copilot CLI executable path. The action installs the CLI if blank. |
+| `copilot-cli-version` | no | `latest` | Copilot CLI npm version to install. Use `latest` or an exact semver version. |
+| `prompt-file` | no | bundled prompt | Override the action prompt with a file from the calling repository workspace. |
+| `triage-label` | no | `Triage` | Label that enables triage on issue open or label assignment. |
+| `completion-marker` | no | `repo-bot:issue-triage` | Hidden bot-owned report marker used for idempotency. |
+| `context-repository` | no | calling repository | `owner/repository` used to search related issues and read context files. All issue mutations remain in the calling repository. |
+| `context-branch` | no | default branch | Branch used for context retrieval. |
+| `allowed-dispositions` | no | built-in list | Comma-separated dispositions permitted for model output. |
+| `allow-label-changes` | no | `true` | Apply validated label additions and removals. |
+| `allow-type-changes` | no | `true` | Move confirmed Bug issues to the Feature issue type. |
+| `allow-close` | no | `true` | Close issues for an allowed closing disposition. |
+| `allow-retriage` | no | `false` | Reprocess an issue when the trigger label is reapplied after this bot already triaged it. |
+| `bypass-for-members` | no | `false` | Skip issues opened by repository collaborators. |
+| `context-files` | no | empty | Comma-separated repository-relative text files read from `context-repository`, in addition to files found by issue-derived code search. |
+| `max-context-bytes` | no | `40000` | Maximum bytes read from each context file. |
+| `max-context-total-bytes` | no | `60000` | Maximum bytes included across all supplemental repository context files. |
+| `max-context-files` | no | `10` | Maximum files included from automatic context search. |
+| `max-related-issues` | no | `10` | Maximum related issue search results supplied to the model. |
+| `max-comment-length` | no | `4000` | Maximum model-provided details length. |
+| `inference-timeout-seconds` | no | `300` | Maximum time for each provider inference request. |
+| `inference-retries` | no | `5` | Retries for transient provider rate-limit, upstream-overload, and 5xx failures, starting after 10 seconds. |
+| `validation-retries` | no | `3` | Corrective inference requests after a response fails local schema or content validation. |
+| `dry-run` | no | `false` | Skip issue mutations. Every run writes its rendered assessment to the workflow summary. |
+
+After successful processing, the action removes the trigger label unless evidence is insufficient. Issues with unclear evidence retain the label for later retriage.
+
+Issue bodies, comments, related issues, and context files are untrusted evidence. They are tagged as untrusted in the prompt, cannot issue GitHub API operations, and model output must pass local schema and repository-label validation before the action mutates GitHub state. System instructions and the triggering issue with its comments are always included intact. The shared context budget applies only to supplemental repository files, while related-issue bodies are limited to the top three candidates. Every run adds an assessment summary, including its recommendation, to the workflow. Every completed triage also posts a table-only bot comment with its assessment, estimated effort, functional area, priority, and supporting details. Open issues automatically receive their selected effort, P1-P4, and matching `Area:` labels when those labels exist. `Bug` and `Feature Request` labels are not applied because GitHub issue types classify them. When evidence confirms that a Bug is a request for new behavior, the action moves it to the Feature issue type.
+
+#### Usage
+
+Run from the consuming repository's default branch. The per-issue concurrency group prevents duplicate work when a newly opened issue already carries `Triage`, which can produce both `opened` and `labeled` events.
+
+```yaml
+name: Issue triage
+
+on:
+  issues:
+    types: [opened, labeled]
+
+jobs:
+  triage:
+    if: >-
+      github.event.action == 'opened' ||
+      (github.event.action == 'labeled' && github.event.label.name == 'Triage')
+    concurrency:
+      group: issue-triage-${{ github.event.issue.number }}
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/create-github-app-token@v2
+        id: app-token
+        with:
+          app-id: ${{ secrets.BOT_APP_ID }}
+          private-key: ${{ secrets.BOT_PRIVATE_KEY }}
+
+      - uses: Dispatcharr/repo-bot/actions/issue-triage@v1
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          bot-login: dispatcharr-issues-bot[bot]
+          provider: copilot
+          provider-key: ${{ github.token }}
+          provider-model: auto
+          prompt-file: .github/triage-prompt.md
+          context-repository: Dispatcharr/Dispatcharr
+          context-branch: dev
+          dry-run: true
+```
+
+Start with `dry-run: true`. Remove it only after reviewing logs in a test repository. Set `allow-close: false` to retain automatic reports and labels while disabling automatic closures. The GitHub App needs Metadata read and Issues read/write permissions. When `context-repository` differs from the calling repository, the App installation token must also have read access to that repository. `actions/checkout` is only needed when using a caller-provided `prompt-file`.
+
+For Copilot, grant the workflow `contents: read` and `copilot-requests: write`, then pass `${{ github.token }}` as `provider-key`. The action installs the requested Copilot CLI version in the runner temporary directory unless `copilot-cli-path` is set. The organization must enable its **Allow use of Copilot CLI billed to the organization** policy. The GitHub App token remains limited to bot-authored GitHub mutations and is never sent to the inference provider. Use `provider: openai` with an API key and model for an OpenAI-compatible fallback.
 
 ---
 
