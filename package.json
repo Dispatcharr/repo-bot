@@ -1,6 +1,6 @@
 {
   "name": "repo-bot",
-  "version": "1.0.0",
+  "version": "1.0.10",
   "description": "GitHub Action enforcing issue templates and PR markers for the Dispatcharr project",
   "scripts": {
     "build": "yarn build:all",
