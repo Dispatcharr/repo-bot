@@ -16,7 +16,7 @@ type Provider = typeof VALID_PROVIDERS[number]
 type Octokit = ReturnType<typeof github.getOctokit>
 type TriageResult = {
   status: typeof VALID_STATUSES[number]
-  details: string
+  details: string[]
   effort: typeof VALID_EFFORTS[number]
   effortReason: string
   priority: typeof VALID_PRIORITIES[number]
@@ -236,7 +236,7 @@ function userPrompt(input: {
   return [
     'Return one JSON object with this exact shape:',
     JSON.stringify({
-      status: 'one allowed status', details: 'concise evidence-based report', effort: 'one allowed effort', effortReason: 'evidence-based string',
+      status: 'one allowed status', details: ['assessment paragraph', 'supporting evidence or follow-up paragraph'], effort: 'one allowed effort', effortReason: 'evidence-based string',
       priority: 'one allowed priority', priorityReason: 'evidence-based string', issueType: 'Bug or Feature', functionalAreas: ['affected components or Unclear'], disposition: 'one allowed disposition', dispositionReason: 'evidence-based string',
       labelsToAdd: ['repository label names'], labelsToRemove: ['repository label names'], relatedIssueNumbers: [123],
     }, null, 2),
@@ -404,11 +404,15 @@ function validateResult(value: unknown, repositoryLabels: Set<string>, allowedDi
   const result = value as Record<string, unknown>
   const string = (key: string): string => {
     if (typeof result[key] !== 'string' || !result[key].trim()) throw new Error(`Inference response field ${key} must be a non-empty string`)
-    return result[key].trim()
+    const value = result[key].trim()
+    if (value.includes('—')) throw new Error(`Inference response field ${key} must not contain an em dash`)
+    return value
   }
   const strings = (key: string): string[] => {
     if (!Array.isArray(result[key]) || !result[key].every(item => typeof item === 'string')) throw new Error(`Inference response field ${key} must be a string array`)
-    return [...new Set(result[key] as string[])].map(item => item.trim()).filter(Boolean)
+    const values = [...new Set(result[key] as string[])].map(item => item.trim()).filter(Boolean)
+    if (values.some(value => value.includes('—'))) throw new Error(`Inference response field ${key} must not contain an em dash`)
+    return values
   }
   const numbers = (key: string): number[] => {
     if (!Array.isArray(result[key]) || !result[key].every(item => Number.isInteger(item) && (item as number) > 0)) throw new Error(`Inference response field ${key} must be a positive integer array`)
@@ -439,9 +443,10 @@ function validateResult(value: unknown, repositoryLabels: Set<string>, allowedDi
     labelsToAdd = []
     labelsToRemove = []
   }
-  const details = string('details')
-  if (details.length > maxCommentLength) throw new Error(`Inference response details exceeds max-comment-length (${maxCommentLength})`)
-  if (details.includes('<!--') || details.includes(marker)) throw new Error('Inference response details contains a reserved marker')
+  const details = strings('details')
+  if (details.length < 2 || details.length > 4) throw new Error('Inference response details must contain two to four paragraphs')
+  if (details.join('\n\n').length > maxCommentLength) throw new Error(`Inference response details exceeds max-comment-length (${maxCommentLength})`)
+  if (details.some(detail => detail.includes('<!--') || detail.includes(marker))) throw new Error('Inference response details contains a reserved marker')
   return { status, details, effort, effortReason: string('effortReason'), priority, priorityReason: string('priorityReason'), issueType, functionalAreas, disposition, dispositionReason: string('dispositionReason'), labelsToAdd, labelsToRemove, relatedIssueNumbers: numbers('relatedIssueNumbers') }
 }
 
@@ -544,7 +549,7 @@ async function run(): Promise<void> {
   if (result.disposition === 'close-duplicate' && (result.relatedIssueNumbers.length !== 1 || !relatedIssues.some(item => item.number === duplicateIssueNumber))) {
     throw new Error('close-duplicate requires exactly one supplied related canonical issue number')
   }
-  const details = result.details
+  const details = result.details.join('\n\n')
   const functionalAreas = result.functionalAreas.join(', ')
   const issueType = moveToFeature ? 'Feature (move from Bug)' : currentIssueType ?? result.issueType
   const reportTable = result.status === 'unclear'
