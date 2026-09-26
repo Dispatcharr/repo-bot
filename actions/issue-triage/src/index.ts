@@ -80,6 +80,17 @@ function searchTerms(title: string, body: string | null): string[] {
     .slice(0, 3)
 }
 
+function relatedIssueQueries(title: string, body: string | null): string[] {
+  const normalizedTitle = title.replace(/^\s*\[[^\]]+\]\s*:?\s*/, '').replace(/\s+/g, ' ').trim()
+  const titleTerms = searchTerms(normalizedTitle, null)
+  const bodyTerms = searchTerms('', body)
+  return [...new Set([
+    normalizedTitle && `in:title "${normalizedTitle.replace(/"/g, '').slice(0, 128)}"`,
+    titleTerms.length > 0 && `in:title ${titleTerms.join(' ')}`,
+    [...titleTerms.slice(0, 2), ...bodyTerms.slice(0, 2)].join(' '),
+  ].filter((query): query is string => Boolean(query)))]
+}
+
 
 function parseRepository(input: string, fallback: { owner: string, repo: string }): { owner: string, repo: string } {
   if (!input.trim()) return fallback
@@ -480,9 +491,11 @@ async function run(): Promise<void> {
 
   const contextStartedAt = Date.now()
   core.info('Phase 1/2: collecting labels, related issues, configured files, and code context')
-  const [labels, relatedIssues, contextFiles, prompt] = await Promise.all([
+  const duplicateQueries = relatedIssueQueries(issue.title, issue.body ?? null)
+  core.info(`Using ${duplicateQueries.length} deterministic duplicate-search query(s): ${duplicateQueries.join(' | ') || '(none)'}`)
+  const [labels, relatedIssueSearches, contextFiles, prompt] = await Promise.all([
     octokit.paginate(octokit.rest.issues.listLabelsForRepo, { owner, repo: repoName, per_page: 100 }),
-    octokit.rest.search.issuesAndPullRequests({ q: `repo:${contextRepository.owner}/${contextRepository.repo} is:issue ${contextQueries.join(' ')}`, per_page: maxRelatedIssues }),
+    Promise.all(duplicateQueries.map(query => octokit.rest.search.issuesAndPullRequests({ q: `repo:${contextRepository.owner}/${contextRepository.repo} is:issue ${query}`, per_page: maxRelatedIssues }))),
     collectRepositoryContext(
       octokit,
       contextRepository.owner,
@@ -496,14 +509,15 @@ async function run(): Promise<void> {
     ),
     readPrompt(core.getInput('prompt-file')),
   ])
+  const relatedIssues = [...new Map(relatedIssueSearches.flatMap(search => search.data.items).map(issue => [issue.number, issue])).values()].slice(0, maxRelatedIssues)
   const repositoryLabels = new Set(labels.map(label => label.name))
   const relatedIssueEvidence = await collectRelatedIssueEvidence(
     octokit,
     contextRepository.owner,
     contextRepository.repo,
-    relatedIssues.data.items.filter(item => contextRepository.owner !== owner || contextRepository.repo !== repoName || item.number !== issueNumber),
+    relatedIssues.filter(item => contextRepository.owner !== owner || contextRepository.repo !== repoName || item.number !== issueNumber),
   )
-  core.info(`Phase 1/2 complete in ${((Date.now() - contextStartedAt) / 1000).toFixed(1)}s. Collected ${Object.keys(contextFiles).length} context file(s), ${relatedIssues.data.items.length} related issue candidate(s), and ${repositoryLabels.size} label(s)`)
+  core.info(`Phase 1/2 complete in ${((Date.now() - contextStartedAt) / 1000).toFixed(1)}s. Collected ${Object.keys(contextFiles).length} context file(s), ${relatedIssues.length} related issue candidate(s), and ${repositoryLabels.size} label(s)`)
   const triageStartedAt = Date.now()
   core.info('Phase 2/2: requesting the triage assessment with prompts/triage.md')
   const inference = await requestInference(provider, core.getInput('provider-key'), core.getInput('provider-model'), core.getInput('provider-base-url'), core.getInput('copilot-cli-path'), core.getInput('copilot-cli-version'), prompt, userPrompt({
@@ -527,7 +541,7 @@ async function run(): Promise<void> {
     : [...new Set([...result.labelsToAdd.filter(label => !ISSUE_TYPE_LABELS.has(label)), ...automaticLabels])]
   if (labelsToAdd.some(label => result.labelsToRemove.includes(label))) throw new Error('Inference response cannot remove a selected priority or functional-area label')
   const duplicateIssueNumber = result.disposition === 'close-duplicate' ? result.relatedIssueNumbers[0] : undefined
-  if (result.disposition === 'close-duplicate' && (result.relatedIssueNumbers.length !== 1 || !relatedIssues.data.items.some(item => item.number === duplicateIssueNumber))) {
+  if (result.disposition === 'close-duplicate' && (result.relatedIssueNumbers.length !== 1 || !relatedIssues.some(item => item.number === duplicateIssueNumber))) {
     throw new Error('close-duplicate requires exactly one supplied related canonical issue number')
   }
   const details = result.details
