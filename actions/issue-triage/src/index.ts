@@ -444,7 +444,7 @@ function validateResult(value: unknown, repositoryLabels: Set<string>, allowedDi
     labelsToRemove = []
   }
   const details = strings('details')
-  if (details.length < 2 || details.length > 4) throw new Error('Inference response details must contain two to four paragraphs')
+  if (details.length < 1 || details.length > 2) throw new Error('Inference response details must contain one or two paragraphs')
   if (details.join('\n\n').length > maxCommentLength) throw new Error(`Inference response details exceeds max-comment-length (${maxCommentLength})`)
   if (details.some(detail => detail.includes('<!--') || detail.includes(marker))) throw new Error('Inference response details contains a reserved marker')
   return { status, details, effort, effortReason: string('effortReason'), priority, priorityReason: string('priorityReason'), issueType, functionalAreas, disposition, dispositionReason: string('dispositionReason'), labelsToAdd, labelsToRemove, relatedIssueNumbers: numbers('relatedIssueNumbers') }
