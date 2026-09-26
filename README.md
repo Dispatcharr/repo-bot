@@ -284,7 +284,7 @@ uses: Dispatcharr/repo-bot/actions/issue-triage@v1
 | `max-context-total-bytes` | no | `60000` | Maximum bytes included across all supplemental repository context files. |
 | `max-context-files` | no | `10` | Maximum files included from automatic context search. |
 | `max-related-issues` | no | `10` | Maximum related issue search results supplied to the model. |
-| `max-comment-length` | no | `4000` | Maximum model-provided report length. |
+| `max-comment-length` | no | `4000` | Maximum model-provided details length. |
 | `inference-timeout-seconds` | no | `300` | Maximum time for each provider inference request. |
 | `inference-retries` | no | `5` | Retries for transient provider rate-limit, upstream-overload, and 5xx failures, starting after 10 seconds. |
 | `dry-run` | no | `false` | Skip issue mutations. Every run writes its rendered assessment to the workflow summary. |

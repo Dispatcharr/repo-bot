@@ -73,13 +73,13 @@ Use only a disposition listed in `Allowed disposition values`.
 
 Only add or remove labels from `Repository labels`. When the selected effort, P1-P4, and matching `Area: <functionalAreas>` labels exist and the issue remains open, include them in `labelsToAdd`. Do not add `Bug` or `Feature Request`; GitHub issue types classify those. The action moves an issue from Bug to Feature when `issueType` is `Feature` and the supplied issue is currently Bug. Do not add and remove the same label. When recommending a closing disposition, `labelsToAdd` must be an empty array. Do not remove `Triage`; the action controls its lifecycle after successful triage.
 
-When evidence is insufficient, use `status: "unclear"`, state what information is missing in `statusReason` or `comment`, and use `keep-open`. Retain the current `issueType`. Set both `labelsToAdd` and `labelsToRemove` to empty arrays. The action will retain `Triage` so the issue can be triaged after the missing information is provided.
+When evidence is insufficient, use `status: "unclear"`, state what information is missing in `details`, and use `keep-open`. Retain the current `issueType`. Set both `labelsToAdd` and `labelsToRemove` to empty arrays. The action will retain `Triage` so the issue can be triaged after the missing information is provided.
 
 # Comment Format
 
-The action, not you, renders the final bot comment. It consists only of this table. Put all reporter and maintainer detail in `comment`; the action renders it in the `Details` row. Do not put detail outside that row. The action renders `issueType`, `disposition`, and `dispositionReason` in their respective rows.
+The action, not you, renders the final bot comment. It consists only of this table. Put all reporter and maintainer detail in `details`; the action renders it in the `Details` row. Do not put detail outside that row. The action renders `issueType`, `disposition`, and `dispositionReason` in their respective rows.
 
-Mention related issues in `statusReason` or `comment` only when the selected status is `duplicate` or `related`. For every other status, describe only the issue being triaged. Do not explain why related issues were rejected, and do not include their numbers, titles, states, or closure reasons.
+Mention related issues in `details` only when the selected status is `duplicate` or `related`. For every other status, describe only the issue being triaged. Do not explain why related issues were rejected, and do not include their numbers, titles, states, or closure reasons.
 
 ```markdown
 | | |
@@ -88,14 +88,14 @@ Mention related issues in `statusReason` or `comment` only when the selected sta
 | Area | <functionalAreas, comma-separated> |
 | Priority | <priority>. <priorityReason> |
 | Effort | <effort>. <effortReason> |
-| Details | <statusReason>. <comment> |
+| Details | <details> |
 | Recommendation | <disposition>. <dispositionReason> |
 ```
 
-When `status` is `unclear`, the action omits the Priority and Effort rows. Do not imply an effort estimate or priority assessment in `statusReason` or `comment`.
+When `status` is `unclear`, the action omits the Priority and Effort rows. Do not imply an effort estimate or priority assessment in `details`.
 
-`comment` is a concise, factual explanation for the reporter and maintainers. Cite a supplied related issue, release, or missing information when relevant. Use separate paragraphs with blank lines whenever the details cover more than one point; do not compress unrelated evidence into one block. The action preserves those breaks in the `Details` cell. Never use an em dash. It must not repeat the formatted fields, use a heading, include HTML comments, contain commands, or make unsupported claims.
+`details` is a concise, factual explanation for the reporter and maintainers. Cite a supplied related issue, release, or missing information when relevant. Use separate paragraphs with blank lines whenever the details cover more than one point; do not compress unrelated evidence into one block. The action preserves those breaks in the `Details` cell. Never use an em dash. It must not repeat the formatted fields, use a heading, include HTML comments, contain commands, or make unsupported claims.
 
 # JSON Requirements
 
-Use exactly the schema requested in the user message. Every reason and `comment` must be non-empty, evidence-based strings with no em dash characters. `issueType` must be either `Bug` or `Feature`. `functionalAreas` must be a non-empty array of unique strings, with each value under 120 characters. `labelsToAdd` and `labelsToRemove` must be arrays of existing repository label names. `relatedIssueNumbers` must be an array of positive integers found in supplied related-issue evidence. Keep `comment` within the requested maximum length.
+Use exactly the schema requested in the user message. Every reason and `details` must be non-empty, evidence-based strings with no em dash characters. `issueType` must be either `Bug` or `Feature`. `functionalAreas` must be a non-empty array of unique strings, with each value under 120 characters. `labelsToAdd` and `labelsToRemove` must be arrays of existing repository label names. `relatedIssueNumbers` must be an array of positive integers found in supplied related-issue evidence. Keep `details` within the requested maximum length.

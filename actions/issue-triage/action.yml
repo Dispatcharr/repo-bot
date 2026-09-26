@@ -96,7 +96,7 @@ inputs:
     required: false
     default: '10'
   max-comment-length:
-    description: "Maximum characters in the model-provided triage report before the action marker is appended."
+    description: "Maximum characters in the model-provided triage details before the action marker is appended."
     required: false
     default: '4000'
   inference-timeout-seconds:

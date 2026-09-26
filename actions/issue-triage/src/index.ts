@@ -16,7 +16,7 @@ type Provider = typeof VALID_PROVIDERS[number]
 type Octokit = ReturnType<typeof github.getOctokit>
 type TriageResult = {
   status: typeof VALID_STATUSES[number]
-  statusReason: string
+  details: string
   effort: typeof VALID_EFFORTS[number]
   effortReason: string
   priority: typeof VALID_PRIORITIES[number]
@@ -28,7 +28,6 @@ type TriageResult = {
   labelsToAdd: string[]
   labelsToRemove: string[]
   relatedIssueNumbers: number[]
-  comment: string
 }
 
 function csv(input: string): string[] {
@@ -226,9 +225,9 @@ function userPrompt(input: {
   return [
     'Return one JSON object with this exact shape:',
     JSON.stringify({
-      status: 'one allowed status', statusReason: 'evidence-based string', effort: 'one allowed effort', effortReason: 'evidence-based string',
+      status: 'one allowed status', details: 'concise evidence-based report', effort: 'one allowed effort', effortReason: 'evidence-based string',
       priority: 'one allowed priority', priorityReason: 'evidence-based string', issueType: 'Bug or Feature', functionalAreas: ['affected components or Unclear'], disposition: 'one allowed disposition', dispositionReason: 'evidence-based string',
-      labelsToAdd: ['repository label names'], labelsToRemove: ['repository label names'], relatedIssueNumbers: [123], comment: 'concise report',
+      labelsToAdd: ['repository label names'], labelsToRemove: ['repository label names'], relatedIssueNumbers: [123],
     }, null, 2),
     `Allowed status values: ${VALID_STATUSES.join(', ')}`,
     `Allowed effort values: ${VALID_EFFORTS.join(', ')}`,
@@ -429,10 +428,10 @@ function validateResult(value: unknown, repositoryLabels: Set<string>, allowedDi
     labelsToAdd = []
     labelsToRemove = []
   }
-  const comment = string('comment')
-  if (comment.length > maxCommentLength) throw new Error(`Inference response comment exceeds max-comment-length (${maxCommentLength})`)
-  if (comment.includes('<!--') || comment.includes(marker)) throw new Error('Inference response comment contains a reserved marker')
-  return { status, statusReason: string('statusReason'), effort, effortReason: string('effortReason'), priority, priorityReason: string('priorityReason'), issueType, functionalAreas, disposition, dispositionReason: string('dispositionReason'), labelsToAdd, labelsToRemove, relatedIssueNumbers: numbers('relatedIssueNumbers'), comment }
+  const details = string('details')
+  if (details.length > maxCommentLength) throw new Error(`Inference response details exceeds max-comment-length (${maxCommentLength})`)
+  if (details.includes('<!--') || details.includes(marker)) throw new Error('Inference response details contains a reserved marker')
+  return { status, details, effort, effortReason: string('effortReason'), priority, priorityReason: string('priorityReason'), issueType, functionalAreas, disposition, dispositionReason: string('dispositionReason'), labelsToAdd, labelsToRemove, relatedIssueNumbers: numbers('relatedIssueNumbers') }
 }
 
 function tableCell(value: string): string {
@@ -531,7 +530,7 @@ async function run(): Promise<void> {
   if (result.disposition === 'close-duplicate' && (result.relatedIssueNumbers.length !== 1 || !relatedIssues.data.items.some(item => item.number === duplicateIssueNumber))) {
     throw new Error('close-duplicate requires exactly one supplied related canonical issue number')
   }
-  const details = `${result.statusReason}\n\n${result.comment}`
+  const details = result.details
   const functionalAreas = result.functionalAreas.join(', ')
   const issueType = moveToFeature ? 'Feature (move from Bug)' : currentIssueType ?? result.issueType
   const reportTable = result.status === 'unclear'
