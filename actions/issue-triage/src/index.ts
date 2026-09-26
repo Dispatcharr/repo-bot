@@ -568,8 +568,8 @@ async function run(): Promise<void> {
   const functionalAreas = result.functionalAreas.join(', ')
   const issueType = moveToFeature ? 'Feature (move from Bug)' : currentIssueType ?? result.issueType
   const reportTable = result.status === 'unclear'
-    ? `| | |\n| --- | --- |\n| Type | ${tableCell(issueType)} |\n| Area | ${tableCell(functionalAreas)} |\n| Details | ${tableCell(details)} |\n| Recommendation | ${tableCell(`${result.disposition}. ${result.dispositionReason}`)} |`
-    : `| | |\n| --- | --- |\n| Type | ${tableCell(issueType)} |\n| Area | ${tableCell(functionalAreas)} |\n| Priority | ${tableCell(result.priority)}. ${tableCell(result.priorityReason)} |\n| Effort | ${tableCell(result.effort)}. ${tableCell(result.effortReason)} |\n| Details | ${tableCell(details)} |\n| Recommendation | ${tableCell(`${result.disposition}. ${result.dispositionReason}`)} |`
+    ? `| | |\n| --- | --- |\n| Type | ${tableCell(issueType)} |\n| Area | ${tableCell(functionalAreas)} |\n| Details | ${tableCell(details)} |`
+    : `| | |\n| --- | --- |\n| Type | ${tableCell(issueType)} |\n| Area | ${tableCell(functionalAreas)} |\n| Priority | ${tableCell(result.priority)}. ${tableCell(result.priorityReason)} |\n| Effort | ${tableCell(result.effort)}. ${tableCell(result.effortReason)} |\n| Details | ${tableCell(details)} |`
   const summaryTable = result.status === 'unclear'
     ? [
         [{ data: '', header: true }, { data: '', header: true }],
