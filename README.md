@@ -251,7 +251,7 @@ For a safe first run, set `dry-run: true`, inspect the logs, then remove it. The
 
 ### issue-triage
 
-Uses a configured AI provider to assess an issue carrying a triage label. It uses deterministic issue terms to search for relevant code, then gathers the issue, comments, repository labels, related issue search results, and configured repository files. The model returns a validated recommendation only. The action, using the supplied GitHub App token, performs the allowed label, comment, and close changes.
+Uses a configured AI provider to assess an issue carrying a triage label. It uses deterministic issue terms to search for relevant code and normalized title concepts to find related issues, then gathers the issue, comments, repository labels, related issue search results, and configured repository files. The model returns a validated recommendation only. The action, using the supplied GitHub App token, performs the allowed label, comment, and close changes.
 
 ```
 uses: Dispatcharr/repo-bot/actions/issue-triage@v1
@@ -279,6 +279,8 @@ uses: Dispatcharr/repo-bot/actions/issue-triage@v1
 | `allow-type-changes` | no | `true` | Move confirmed Bug issues to the Feature issue type. |
 | `allow-close` | no | `true` | Close issues for an allowed closing disposition. |
 | `allow-retriage` | no | `false` | Reprocess an issue when the trigger label is reapplied after this bot already triaged it. |
+| `allow-non-triage` | no | `false` | Process an open issue without the trigger label, for dry runs or manual retriage. |
+| `allow-closed` | no | `false` | Process a closed issue, for dry runs or manual retriage. |
 | `bypass-for-members` | no | `false` | Skip issues opened by repository collaborators. |
 | `context-files` | no | empty | Comma-separated repository-relative text files read from `context-repository`, in addition to files found by issue-derived code search. |
 | `max-context-bytes` | no | `40000` | Maximum bytes read from each context file. |
@@ -338,6 +340,16 @@ jobs:
 Start with `dry-run: true`. Remove it only after reviewing logs in a test repository. Set `allow-close: false` to retain automatic reports and labels while disabling automatic closures. The GitHub App needs Metadata read and Issues read/write permissions. When `context-repository` differs from the calling repository, the App installation token must also have read access to that repository. `actions/checkout` is only needed when using a caller-provided `prompt-file`.
 
 For Copilot, grant the workflow `contents: read` and `copilot-requests: write`, then pass `${{ github.token }}` as `provider-key`. The action installs the requested Copilot CLI version in the runner temporary directory unless `copilot-cli-path` is set. The organization must enable its **Allow use of Copilot CLI billed to the organization** policy. The GitHub App token remains limited to bot-authored GitHub mutations and is never sent to the inference provider. Use `provider: openai` with an API key and model for an OpenAI-compatible fallback.
+
+#### Local dry run
+
+Run an issue through the bundled action locally with the same inputs as the Dispatcharr OpenRouter workflow:
+
+```bash
+GITHUB_TOKEN=<github-token> OPENROUTER_API_KEY=<key> TRIAGE_MODEL=<model> yarn triage:dry-run https://github.com/Dispatcharr/Dispatcharr/issues/1768
+```
+
+The script rebuilds the triage bundle first, synthesizes an `issues.opened` event from the URL, and forces `dry-run: true`; it cannot mutate GitHub. `GITHUB_TOKEN` is used for GitHub API reads. The URL's repository is both the target and context repository. The local run uses `dev`, `README.md,CHANGELOG.md,pyproject.toml`, 8 KB per context file, 24 KB total context, and five related issues. It bypasses the `Triage` label gate, completion-marker gate, and open-state gate, so any issue can be assessed. The bot login matches the workflow only for idempotency checks.
 
 ---
 

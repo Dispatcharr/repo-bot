@@ -10,6 +10,8 @@
     "build:branch-guard": "ncc build actions/branch-guard/src/index.ts -o actions/branch-guard/dist --minify --source-map --license licenses.txt",
     "build:pr-freshness": "ncc build actions/pr-freshness/src/index.ts -o actions/pr-freshness/dist --minify --source-map --license licenses.txt",
     "build:issue-triage": "ncc build actions/issue-triage/src/index.ts -o actions/issue-triage/dist --minify --source-map --license licenses.txt",
+    "pretriage:dry-run": "yarn build:issue-triage",
+    "triage:dry-run": "node scripts/issue-triage-dry-run.js",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
