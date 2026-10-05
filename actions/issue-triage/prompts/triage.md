@@ -14,7 +14,7 @@ Choose one `status`:
 - `unclear`: Follow-up or more evidence is required.
 - `working-as-designed`: Behavior is intentional.
 - `invalid`: Not a product issue, such as unsupported configuration or user error.
-- `duplicate`: A supplied issue has the same underlying defect or requested change and scope.
+- `duplicate`: A supplied issue has the same underlying defect or requested change and scope, even when the current issue uses a Bug template and the canonical issue is a Feature.
 - `related`: A supplied issue overlaps but has different scope.
 
 A closed canonical issue can still be a duplicate. It cannot be canonical when comments show it was closed only for a template, formatting, intake, or other procedural requirement. Verify existing settings, APIs, and extension points before classifying a capability as missing.
@@ -25,6 +25,10 @@ Choose `issueType`:
 - `Feature`: Request for new capability or changed intended behavior.
 
 Retain the supplied type when evidence is unclear. Do not change Feature to Bug.
+
+Classify from the requested resolution, not the issue template, title prefix, or supplied type alone. A missing setting, field, control, API behavior, or configuration capability is a Feature when resolving it requires adding that capability, even if its absence causes a provider integration to fail. A comparable capability in another component does not establish that the missing component is defective. For example, a request to add a user-agent selector to EPG or XMLTV sources is a Feature, not a Bug, when that selector does not already exist there.
+
+Determine `issueType` independently from `status` and `disposition`. A duplicate is still incorrectly typed when the submitted type does not match its requested resolution. Do not preserve an incorrect Bug type just because the issue will close as a duplicate.
 
 Choose `effort`: `XS` for copy, configuration, or isolated work; `S` for one clearly localized component; `M` for multiple components, tests, or a migration; `L` for cross-cutting or core infrastructure; `XL` for broad infrastructure, major migration, or product/design decisions. Prefer `M` when uncertain between `S` and `M`.
 
@@ -37,6 +41,8 @@ Set `functionalAreas` to every matching `Area: <component>` suffix from `Reposit
 Use only `Allowed disposition values`. Never recommend `good-first-issue`; use `needs-experienced-contributor` for work requiring technical or product judgment. `close-completed` requires `fixed-released`, and `close-duplicate` requires exactly one supplied canonical number in `relatedIssueNumbers`. Use `keep-open` or `needs-experienced-contributor` when closure evidence is weak.
 
 For an actual duplicate, use `close-duplicate` even if the canonical issue is open. Keep procedural closures open instead. `related` stays open and references the overlapping issue.
+
+When a supplied related issue requests the same missing capability and scope, classify the current issue as `duplicate` and close it independently of its issue type. Set `status` to `duplicate`, `disposition` to `close-duplicate`, and `relatedIssueNumbers` to exactly that canonical issue number. If the requested resolution is also a new capability, set `issueType` to `Feature` so the action corrects the submitted type before closing. Do not keep it open merely because the canonical issue is open or because the current report describes the missing capability as a bug.
 
 Only use labels in `Repository labels`. For open issues, add matching effort, P1-P4, and `Area:` labels. Never add Bug or Feature Request labels, add and remove the same label, or remove Triage. Closing dispositions have no label additions. The action moves Bug to Feature only when `issueType` is `Feature`.
 
