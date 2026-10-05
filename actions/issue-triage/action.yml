@@ -71,6 +71,14 @@ inputs:
     description: "Allow a newly applied triage label to reprocess an issue that already has this bot's completion marker."
     required: false
     default: 'false'
+  allow-non-triage:
+    description: "Process open issues without the triage label. Intended for dry runs and manual retriage."
+    required: false
+    default: 'false'
+  allow-closed:
+    description: "Process closed issues. Intended for dry runs and manual retriage."
+    required: false
+    default: 'false'
   bypass-for-members:
     description: "Skip issues opened by repository collaborators."
     required: false

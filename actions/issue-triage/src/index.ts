@@ -80,13 +80,24 @@ function searchTerms(title: string, body: string | null): string[] {
     .slice(0, 3)
 }
 
+const RELATED_ISSUE_STOP_WORDS = new Set([
+  'a', 'an', 'and', 'are', 'as', 'at', 'be', 'bug', 'by', 'for', 'from', 'has', 'have', 'in', 'is', 'issue', 'no', 'not', 'of', 'on', 'or', 'request', 'the', 'to', 'with',
+])
+
+function relatedIssueTerms(title: string): string[] {
+  return title
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .split(/\s+/)
+    .filter(word => word.length >= 3 && !RELATED_ISSUE_STOP_WORDS.has(word.toLowerCase()))
+}
+
 function relatedIssueQueries(title: string, body: string | null): string[] {
   const normalizedTitle = title.replace(/^\s*\[[^\]]+\]\s*:?\s*/, '').replace(/\s+/g, ' ').trim()
-  const titleTerms = searchTerms(normalizedTitle, null)
+  const titleTerms = relatedIssueTerms(normalizedTitle)
   const bodyTerms = searchTerms('', body)
   return [...new Set([
     normalizedTitle && `in:title "${normalizedTitle.replace(/"/g, '').slice(0, 128)}"`,
-    titleTerms.length > 0 && `in:title ${titleTerms.join(' ')}`,
+    titleTerms.length > 0 && `in:title ${titleTerms.slice(0, 3).join(' ')}`,
     [...titleTerms.slice(0, 2), ...bodyTerms.slice(0, 2)].join(' '),
   ].filter((query): query is string => Boolean(query)))]
 }
@@ -467,6 +478,8 @@ async function run(): Promise<void> {
   const allowTypeChanges = core.getBooleanInput('allow-type-changes')
   const allowClose = core.getBooleanInput('allow-close')
   const allowRetriage = core.getBooleanInput('allow-retriage')
+  const allowNonTriage = core.getBooleanInput('allow-non-triage')
+  const allowClosed = core.getBooleanInput('allow-closed')
   const bypassForMembers = core.getBooleanInput('bypass-for-members')
   const dryRun = core.getBooleanInput('dry-run')
   const maxContextBytes = parsePositiveInteger(core.getInput('max-context-bytes'), 'max-context-bytes')
@@ -488,7 +501,7 @@ async function run(): Promise<void> {
   const contextRepository = parseRepository(core.getInput('context-repository'), { owner, repo: repoName })
   const issueNumber = payload.issue.number
   const { data: issue } = await octokit.rest.issues.get({ owner, repo: repoName, issue_number: issueNumber })
-  if (issue.state !== 'open' || !hasLabel(issue.labels, triageLabel)) return core.info(`Issue #${issueNumber} is not an open triage candidate`)
+  if ((!allowClosed && issue.state !== 'open') || (!allowNonTriage && !hasLabel(issue.labels, triageLabel))) return core.info(`Issue #${issueNumber} is not a triage candidate`)
   if (bypassForMembers && issue.user?.login && await isCollaborator(octokit, owner, repoName, issue.user.login)) return core.info(`Skipping collaborator issue #${issueNumber}`)
   const comments = await octokit.paginate(octokit.rest.issues.listComments, { owner, repo: repoName, issue_number: issueNumber, per_page: 100 })
   if (!allowRetriage && comments.some(comment => markerComment(comment, marker, botLogin))) return core.info(`Issue #${issueNumber} was already triaged by this bot`)
