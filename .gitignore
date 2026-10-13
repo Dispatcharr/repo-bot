@@ -3,5 +3,13 @@
 !.github
 node_modules/
 lib/
-# dist/ is intentionally committed - GitHub runs the action directly from it
-actions/*/dist/*.map
+# GitHub runs these issue-triage artifacts directly. Keep other
+# platform-specific and code-split bundler output out of the worktree.
+!actions/
+!actions/issue-triage/
+!actions/issue-triage/dist/
+actions/issue-triage/dist/*
+!actions/issue-triage/dist/index.js
+!actions/issue-triage/dist/index.js.map
+!actions/issue-triage/dist/licenses.txt
+!actions/issue-triage/dist/sourcemap-register.js

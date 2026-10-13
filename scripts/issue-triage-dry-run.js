@@ -28,6 +28,7 @@ const DEFAULT_INPUTS = {
   'max-context-total-bytes': '24000',
   'max-context-files': '10',
   'max-related-issues': '5',
+  'ignore-related-issues': '',
   'max-comment-length': '4000',
   'inference-timeout-seconds': '300',
   'inference-retries': '5',
@@ -36,7 +37,7 @@ const DEFAULT_INPUTS = {
 }
 
 function usage() {
-  console.error('Usage: GITHUB_TOKEN=<token> OPENROUTER_API_KEY=<key> TRIAGE_MODEL=<model> yarn triage:dry-run https://github.com/OWNER/REPO/issues/NUMBER')
+  console.error('Usage: GITHUB_TOKEN=<token> OPENROUTER_API_KEY=<key> TRIAGE_MODEL=<model> yarn triage:dry-run https://github.com/OWNER/REPO/issues/NUMBER [--ignore-related-issues 123,456]')
 }
 
 function parseIssueUrl(value) {
@@ -51,8 +52,8 @@ function inputEnvironment(inputs) {
 }
 
 async function run() {
-  const [issueUrl] = process.argv.slice(2)
-  if (!issueUrl || process.argv.length !== 3) {
+  const [issueUrl, ...options] = process.argv.slice(2)
+  if (!issueUrl || (options.length !== 0 && (options.length !== 2 || options[0] !== '--ignore-related-issues' || !options[1]))) {
     usage()
     process.exitCode = 1
     return
@@ -69,6 +70,7 @@ async function run() {
     'github-token': process.env.GITHUB_TOKEN,
     'bot-login': 'dispatcharr-issues-bot[bot]',
     'dry-run': 'true',
+    'ignore-related-issues': options[1] || '',
   }
   const eventDirectory = await mkdtemp(join(tmpdir(), 'issue-triage-'))
   const eventPath = join(eventDirectory, 'event.json')

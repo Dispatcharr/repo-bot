@@ -103,6 +103,10 @@ inputs:
     description: "Maximum related issue search results included as context."
     required: false
     default: '10'
+  ignore-related-issues:
+    description: "Comma-separated related issue numbers to exclude during a dry run."
+    required: false
+    default: ''
   max-comment-length:
     description: "Maximum characters in the model-provided triage details before the action marker is appended."
     required: false

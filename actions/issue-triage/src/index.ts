@@ -46,6 +46,10 @@ function parseNonNegativeInteger(input: string, name: string): number {
   return value
 }
 
+function positiveIntegerSet(input: string, name: string): Set<number> {
+  return new Set(csv(input).map(value => parsePositiveInteger(value, name)))
+}
+
 function hasLabel(labels: Array<string | { name?: string | null }>, name: string): boolean {
   return labels.some(label => (typeof label === 'string' ? label : label.name) === name)
 }
@@ -490,6 +494,8 @@ async function run(): Promise<void> {
   const inferenceTimeoutSeconds = parsePositiveInteger(core.getInput('inference-timeout-seconds'), 'inference-timeout-seconds')
   const inferenceRetries = parseNonNegativeInteger(core.getInput('inference-retries'), 'inference-retries')
   const validationRetries = parseNonNegativeInteger(core.getInput('validation-retries'), 'validation-retries')
+  const ignoredRelatedIssueNumbers = positiveIntegerSet(core.getInput('ignore-related-issues'), 'ignore-related-issues')
+  if (!dryRun && ignoredRelatedIssueNumbers.size > 0) throw new Error('ignore-related-issues is only supported with dry-run: true')
   const { eventName, payload, repo } = github.context
   if (eventName !== 'issues' || !payload.issue) return core.info('Issue Triage only runs on issue events')
   const eventAction = payload.action
@@ -528,7 +534,10 @@ async function run(): Promise<void> {
     ),
     readPrompt(core.getInput('prompt-file')),
   ])
-  const relatedIssues = [...new Map(relatedIssueSearches.flatMap(search => search.data.items).map(issue => [issue.number, issue])).values()].slice(0, maxRelatedIssues)
+  const relatedIssues = [...new Map(relatedIssueSearches.flatMap(search => search.data.items).map(issue => [issue.number, issue])).values()]
+    .filter(candidate => !ignoredRelatedIssueNumbers.has(candidate.number))
+    .slice(0, maxRelatedIssues)
+  if (ignoredRelatedIssueNumbers.size > 0) core.info(`Ignoring related issue candidate(s) for dry run: ${[...ignoredRelatedIssueNumbers].join(', ')}`)
   const repositoryLabels = new Set(labels.map(label => label.name))
   const relatedIssueEvidence = await collectRelatedIssueEvidence(
     octokit,
