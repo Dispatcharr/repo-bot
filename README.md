@@ -350,7 +350,7 @@ Run an issue through the bundled action locally with the same inputs as the Disp
 GITHUB_TOKEN=<github-token> OPENROUTER_API_KEY=<key> TRIAGE_MODEL=<model> yarn triage:dry-run https://github.com/Dispatcharr/Dispatcharr/issues/1778 --ignore-related-issues 1776
 ```
 
-The script rebuilds the triage bundle first, synthesizes an `issues.opened` event from the URL, and forces `dry-run: true`; it cannot mutate GitHub. Pass `--ignore-related-issues 123,456` to omit known candidates from the model evidence while testing a triage result. `GITHUB_TOKEN` is used for GitHub API reads. The URL's repository is both the target and context repository. The local run uses `dev`, `README.md,CHANGELOG.md,pyproject.toml`, 8 KB per context file, 24 KB total context, and five related issues. It bypasses the `Triage` label gate, completion-marker gate, and open-state gate, so any issue can be assessed. The bot login matches the workflow only for idempotency checks.
+The script rebuilds the triage bundle first, synthesizes an `issues.opened` event from the URL, forces `dry-run: true`, and renders the action summary as a terminal-width table; it cannot mutate GitHub. Pass `--ignore-related-issues 123,456` to omit known candidates from the model evidence while testing a triage result. `GITHUB_TOKEN` is used for GitHub API reads. The URL's repository is both the target and context repository. The local run uses `dev`, `README.md,CHANGELOG.md,pyproject.toml`, 8 KB per context file, 24 KB total context, and five related issues. It bypasses the `Triage` label gate, completion-marker gate, and open-state gate, so any issue can be assessed. The bot login matches the workflow only for idempotency checks.
 
 ---
 
