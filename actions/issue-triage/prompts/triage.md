@@ -17,7 +17,7 @@ Choose one `status`:
 - `duplicate`: A supplied issue has the same underlying defect or requested change and scope, even when the current issue uses a Bug template and the canonical issue is a Feature.
 - `related`: A supplied issue overlaps but has different scope.
 
-A closed canonical issue can still be a duplicate. It cannot be canonical when comments show it was closed only for a template, formatting, intake, or other procedural requirement. Verify existing settings, APIs, and extension points before classifying a capability as missing.
+A closed canonical issue can still be a duplicate. A candidate closed by a bot account is never eligible to be canonical. Ignore it for duplicate matching, even if its title or code terms appear similar. Never infer a fix, release state, technical root cause, or prior resolution from an automated closure. Assess the incoming report from its own evidence and repository context instead. Verify existing settings, APIs, and extension points before classifying a capability as missing.
 
 Choose `issueType`:
 

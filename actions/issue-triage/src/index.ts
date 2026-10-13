@@ -30,6 +30,18 @@ type TriageResult = {
   relatedIssueNumbers: number[]
 }
 
+type RelatedIssueEvidence = {
+  number: number
+  title: string
+  state: string
+  stateReason?: string | null
+  closedAt?: string | null
+  closedBy?: { login?: string | null, type?: string | null } | null
+  body?: string
+  labels: unknown
+  comments: Array<{ author?: string, createdAt?: string, body: string }>
+}
+
 function csv(input: string): string[] {
   return input.split(',').map(value => value.trim()).filter(Boolean)
 }
@@ -46,6 +58,10 @@ function parseNonNegativeInteger(input: string, name: string): number {
   return value
 }
 
+function positiveIntegerSet(input: string, name: string): Set<number> {
+  return new Set(csv(input).map(value => parsePositiveInteger(value, name)))
+}
+
 function hasLabel(labels: Array<string | { name?: string | null }>, name: string): boolean {
   return labels.some(label => (typeof label === 'string' ? label : label.name) === name)
 }
@@ -55,8 +71,8 @@ function issueTypeName(issue: unknown): string | null {
   return typeof type?.name === 'string' ? type.name : null
 }
 
-function markerComment(comment: { body?: string | null, user?: { login?: string | null } | null }, marker: string, botLogin: string): boolean {
-  return comment.user?.login === botLogin && comment.body?.includes(`<!-- ${marker} -->`) === true
+function markerComment(comment: { body?: string | null, user?: { login?: string | null, type?: string | null } | null }, marker: string, botLogin: string): boolean {
+  return comment.body?.includes(`<!-- ${marker} -->`) === true && (comment.user?.login === botLogin || comment.user?.type === 'Bot')
 }
 
 async function isCollaborator(octokit: Octokit, owner: string, repo: string, username: string): Promise<boolean> {
@@ -212,7 +228,7 @@ async function collectRepositoryContext(
   }
 }
 
-async function collectRelatedIssueEvidence(octokit: Octokit, owner: string, repo: string, issues: Array<{ number: number, title: string, state: string, body?: string | null, labels: unknown }>): Promise<unknown[]> {
+async function collectRelatedIssueEvidence(octokit: Octokit, owner: string, repo: string, issues: Array<{ number: number, title: string, state: string, body?: string | null, labels: unknown }>): Promise<RelatedIssueEvidence[]> {
   return Promise.all(issues.map(async (candidate, index) => {
     try {
       const { data: issue } = await octokit.rest.issues.get({ owner, repo, issue_number: candidate.number })
@@ -225,6 +241,7 @@ async function collectRelatedIssueEvidence(octokit: Octokit, owner: string, repo
         state: issue.state,
         stateReason: issue.state_reason,
         closedAt: issue.closed_at,
+        closedBy: issue.closed_by ? { login: issue.closed_by.login, type: issue.closed_by.type } : null,
         body: index < 3 ? truncateContext(issue.body ?? candidate.body ?? '', 6_000) : undefined,
         labels: issue.labels,
         comments: comments.map(comment => ({ author: comment.user?.login, createdAt: comment.created_at, body: truncateContext(comment.body ?? '', 2_000) })),
@@ -234,6 +251,10 @@ async function collectRelatedIssueEvidence(octokit: Octokit, owner: string, repo
       return { ...candidate, body: index < 3 ? truncateContext(candidate.body ?? '', 6_000) : undefined, comments: [] }
     }
   }))
+}
+
+function isBotClosed(issue: RelatedIssueEvidence): boolean {
+  return issue.state === 'closed' && issue.closedBy?.type === 'Bot'
 }
 
 function userPrompt(input: {
@@ -490,6 +511,8 @@ async function run(): Promise<void> {
   const inferenceTimeoutSeconds = parsePositiveInteger(core.getInput('inference-timeout-seconds'), 'inference-timeout-seconds')
   const inferenceRetries = parseNonNegativeInteger(core.getInput('inference-retries'), 'inference-retries')
   const validationRetries = parseNonNegativeInteger(core.getInput('validation-retries'), 'validation-retries')
+  const ignoredRelatedIssueNumbers = positiveIntegerSet(core.getInput('ignore-related-issues'), 'ignore-related-issues')
+  if (!dryRun && ignoredRelatedIssueNumbers.size > 0) throw new Error('ignore-related-issues is only supported with dry-run: true')
   const { eventName, payload, repo } = github.context
   if (eventName !== 'issues' || !payload.issue) return core.info('Issue Triage only runs on issue events')
   const eventAction = payload.action
@@ -528,7 +551,10 @@ async function run(): Promise<void> {
     ),
     readPrompt(core.getInput('prompt-file')),
   ])
-  const relatedIssues = [...new Map(relatedIssueSearches.flatMap(search => search.data.items).map(issue => [issue.number, issue])).values()].slice(0, maxRelatedIssues)
+  const relatedIssues = [...new Map(relatedIssueSearches.flatMap(search => search.data.items).map(issue => [issue.number, issue])).values()]
+    .filter(candidate => !ignoredRelatedIssueNumbers.has(candidate.number))
+    .slice(0, maxRelatedIssues)
+  if (ignoredRelatedIssueNumbers.size > 0) core.info(`Ignoring related issue candidate(s) for dry run: ${[...ignoredRelatedIssueNumbers].join(', ')}`)
   const repositoryLabels = new Set(labels.map(label => label.name))
   const relatedIssueEvidence = await collectRelatedIssueEvidence(
     octokit,
@@ -536,14 +562,20 @@ async function run(): Promise<void> {
     contextRepository.repo,
     relatedIssues.filter(item => contextRepository.owner !== owner || contextRepository.repo !== repoName || item.number !== issueNumber),
   )
-  core.info(`Phase 1/2 complete in ${((Date.now() - contextStartedAt) / 1000).toFixed(1)}s. Collected ${Object.keys(contextFiles).length} context file(s), ${relatedIssues.length} related issue candidate(s), and ${repositoryLabels.size} label(s)`)
+  const botClosedNumbers = new Set(relatedIssueEvidence.filter(isBotClosed).map(issue => issue.number))
+  if (botClosedNumbers.size > 0) core.info(`Ignoring bot-closed related issue candidate(s): ${[...botClosedNumbers].join(', ')}`)
+  const eligibleRelatedIssues = relatedIssues.filter(issue => !botClosedNumbers.has(issue.number))
+  const eligibleRelatedIssueEvidence = relatedIssueEvidence.filter(issue => !botClosedNumbers.has(issue.number))
+  core.info(`Phase 1/2 complete in ${((Date.now() - contextStartedAt) / 1000).toFixed(1)}s. Collected ${Object.keys(contextFiles).length} context file(s), ${relatedIssues.length} related issue candidate(s) (${eligibleRelatedIssues.length} eligible), and ${repositoryLabels.size} label(s)`)
   const triageStartedAt = Date.now()
   core.info('Phase 2/2: requesting the triage assessment with prompts/triage.md')
+  const inferenceComments = comments.filter(comment => !markerComment(comment, marker, botLogin))
+  if (inferenceComments.length !== comments.length) core.info(`Ignoring ${comments.length - inferenceComments.length} prior bot triage comment(s) from inference evidence`)
   const assessmentPrompt = userPrompt({
     issue: { number: issue.number, title: issue.title, body: issue.body, type: issueTypeName(issue), createdAt: issue.created_at, updatedAt: issue.updated_at, labels: issue.labels.map(label => typeof label === 'string' ? label : label.name) },
-    comments: comments.map(comment => ({ author: comment.user?.login, createdAt: comment.created_at, body: comment.body })),
+    comments: inferenceComments.map(comment => ({ author: comment.user?.login, createdAt: comment.created_at, body: comment.body })),
     labels: [...repositoryLabels],
-    relatedIssues: relatedIssueEvidence,
+    relatedIssues: eligibleRelatedIssueEvidence,
     contextFiles,
     allowedDispositions: [...allowedDispositions],
   })
@@ -574,7 +606,7 @@ async function run(): Promise<void> {
     : [...new Set([...result.labelsToAdd.filter(label => !ISSUE_TYPE_LABELS.has(label)), ...automaticLabels])]
   if (labelsToAdd.some(label => result.labelsToRemove.includes(label))) throw new Error('Inference response cannot remove a selected priority or functional-area label')
   const duplicateIssueNumber = result.disposition === 'close-duplicate' ? result.relatedIssueNumbers[0] : undefined
-  if (result.disposition === 'close-duplicate' && (result.relatedIssueNumbers.length !== 1 || !relatedIssues.some(item => item.number === duplicateIssueNumber))) {
+  if (result.disposition === 'close-duplicate' && (result.relatedIssueNumbers.length !== 1 || !eligibleRelatedIssues.some(item => item.number === duplicateIssueNumber))) {
     throw new Error('close-duplicate requires exactly one supplied related canonical issue number')
   }
   const details = result.details.join('\n\n')

@@ -1,4 +1,4 @@
-const { mkdtemp, rm, writeFile } = require('node:fs/promises')
+const { mkdtemp, readFile, rm, writeFile } = require('node:fs/promises')
 const { spawn } = require('node:child_process')
 const { join, resolve } = require('node:path')
 const { tmpdir } = require('node:os')
@@ -28,6 +28,7 @@ const DEFAULT_INPUTS = {
   'max-context-total-bytes': '24000',
   'max-context-files': '10',
   'max-related-issues': '5',
+  'ignore-related-issues': '',
   'max-comment-length': '4000',
   'inference-timeout-seconds': '300',
   'inference-retries': '5',
@@ -36,7 +37,7 @@ const DEFAULT_INPUTS = {
 }
 
 function usage() {
-  console.error('Usage: GITHUB_TOKEN=<token> OPENROUTER_API_KEY=<key> TRIAGE_MODEL=<model> yarn triage:dry-run https://github.com/OWNER/REPO/issues/NUMBER')
+  console.error('Usage: GITHUB_TOKEN=<token> OPENROUTER_API_KEY=<key> TRIAGE_MODEL=<model> yarn triage:dry-run https://github.com/OWNER/REPO/issues/NUMBER [--ignore-related-issues 123,456]')
 }
 
 function parseIssueUrl(value) {
@@ -50,9 +51,77 @@ function inputEnvironment(inputs) {
   return Object.fromEntries(Object.entries(inputs).map(([name, value]) => [`INPUT_${name.replace(/ /g, '_').toUpperCase()}`, value]))
 }
 
+function htmlToText(value) {
+  return value
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<[^>]*>/g, '')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .trim()
+}
+
+function wrapText(value, width) {
+  return value.split('\n').flatMap(line => {
+    if (!line) return ['']
+    const lines = []
+    let current = ''
+    for (const word of line.split(/\s+/)) {
+      if (word.length > width) {
+        if (current) lines.push(current)
+        for (let index = 0; index < word.length; index += width) lines.push(word.slice(index, index + width))
+        current = ''
+      } else if (!current || current.length + word.length + 1 <= width) {
+        current = current ? `${current} ${word}` : word
+      } else {
+        lines.push(current)
+        current = word
+      }
+    }
+    if (current) lines.push(current)
+    return lines
+  })
+}
+
+function printTable(rows) {
+  const terminalWidth = process.stdout.columns || 120
+  const fieldWidth = Math.min(Math.max(1, terminalWidth - 8), Math.max(1, ...rows.map(([field]) => field.length)), 20)
+  const valueWidth = Math.max(1, terminalWidth - fieldWidth - 7)
+  const border = `+-${'-'.repeat(fieldWidth)}-+-${'-'.repeat(valueWidth)}-+`
+  console.log(border)
+  for (const [field, value] of rows) {
+    const fieldLines = wrapText(field, fieldWidth)
+    const valueLines = wrapText(value, valueWidth)
+    const lineCount = Math.max(fieldLines.length, valueLines.length)
+    for (let index = 0; index < lineCount; index++) {
+      console.log(`| ${(fieldLines[index] || '').padEnd(fieldWidth)} | ${(valueLines[index] || '').padEnd(valueWidth)} |`)
+    }
+    console.log(border)
+  }
+}
+
+function printSummary(summary) {
+  const heading = summary.match(/<h1>(.*?)<\/h1>/s)?.[1]
+  const table = summary.match(/<table>(.*?)<\/table>/s)?.[1]
+  const rows = table
+    ? [...table.matchAll(/<tr>(.*?)<\/tr>/gs)]
+      .map(row => [...row[1].matchAll(/<t[dh][^>]*>(.*?)<\/t[dh]>/gs)].map(cell => htmlToText(cell[1])))
+      .filter(row => row.length === 2 && row[0])
+    : []
+
+  console.log(`\n--- ${heading ? htmlToText(heading) : 'Triage summary'} ---`)
+  if (rows.length > 0) {
+    printTable(rows)
+    return
+  }
+  console.log(htmlToText(summary))
+}
+
 async function run() {
-  const [issueUrl] = process.argv.slice(2)
-  if (!issueUrl || process.argv.length !== 3) {
+  const [issueUrl, ...options] = process.argv.slice(2)
+  if (!issueUrl || (options.length !== 0 && (options.length !== 2 || options[0] !== '--ignore-related-issues' || !options[1]))) {
     usage()
     process.exitCode = 1
     return
@@ -69,10 +138,13 @@ async function run() {
     'github-token': process.env.GITHUB_TOKEN,
     'bot-login': 'dispatcharr-issues-bot[bot]',
     'dry-run': 'true',
+    'ignore-related-issues': options[1] || '',
   }
   const eventDirectory = await mkdtemp(join(tmpdir(), 'issue-triage-'))
   const eventPath = join(eventDirectory, 'event.json')
+  const summaryPath = join(eventDirectory, 'summary.md')
   await writeFile(eventPath, JSON.stringify({ action: 'opened', issue: { number: issue.number }, repository: { full_name: `${issue.owner}/${issue.repo}` } }))
+  await writeFile(summaryPath, '')
 
   try {
     const child = spawn(process.execPath, [resolve(__dirname, '..', 'actions', 'issue-triage', 'dist', 'index.js')], {
@@ -83,6 +155,7 @@ async function run() {
         GITHUB_EVENT_PATH: eventPath,
         GITHUB_REPOSITORY: `${issue.owner}/${issue.repo}`,
         GITHUB_API_URL: process.env.GITHUB_API_URL || 'https://api.github.com',
+        GITHUB_STEP_SUMMARY: summaryPath,
       },
       stdio: 'inherit',
     })
@@ -90,6 +163,8 @@ async function run() {
       child.once('error', reject)
       child.once('close', code => resolveExit(code ?? 1))
     })
+    const summary = await readFile(summaryPath, 'utf8')
+    if (summary) printSummary(summary)
     process.exitCode = exitCode
   } finally {
     await rm(eventDirectory, { recursive: true, force: true })

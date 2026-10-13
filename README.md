@@ -287,6 +287,7 @@ uses: Dispatcharr/repo-bot/actions/issue-triage@v1
 | `max-context-total-bytes` | no | `60000` | Maximum bytes included across all supplemental repository context files. |
 | `max-context-files` | no | `10` | Maximum files included from automatic context search. |
 | `max-related-issues` | no | `10` | Maximum related issue search results supplied to the model. |
+| `ignore-related-issues` | no | empty | Comma-separated related issue numbers to exclude in a dry run. This input is rejected outside dry runs. |
 | `max-comment-length` | no | `4000` | Maximum model-provided details length. |
 | `inference-timeout-seconds` | no | `300` | Maximum time for each provider inference request. |
 | `inference-retries` | no | `5` | Retries for transient provider rate-limit, upstream-overload, and 5xx failures, starting after 10 seconds. |
@@ -346,10 +347,10 @@ For Copilot, grant the workflow `contents: read` and `copilot-requests: write`, 
 Run an issue through the bundled action locally with the same inputs as the Dispatcharr OpenRouter workflow:
 
 ```bash
-GITHUB_TOKEN=<github-token> OPENROUTER_API_KEY=<key> TRIAGE_MODEL=<model> yarn triage:dry-run https://github.com/Dispatcharr/Dispatcharr/issues/1768
+GITHUB_TOKEN=<github-token> OPENROUTER_API_KEY=<key> TRIAGE_MODEL=<model> yarn triage:dry-run https://github.com/Dispatcharr/Dispatcharr/issues/1778 --ignore-related-issues 1776
 ```
 
-The script rebuilds the triage bundle first, synthesizes an `issues.opened` event from the URL, and forces `dry-run: true`; it cannot mutate GitHub. `GITHUB_TOKEN` is used for GitHub API reads. The URL's repository is both the target and context repository. The local run uses `dev`, `README.md,CHANGELOG.md,pyproject.toml`, 8 KB per context file, 24 KB total context, and five related issues. It bypasses the `Triage` label gate, completion-marker gate, and open-state gate, so any issue can be assessed. The bot login matches the workflow only for idempotency checks.
+The script rebuilds the triage bundle first, synthesizes an `issues.opened` event from the URL, forces `dry-run: true`, and renders the action summary as a terminal-width table; it cannot mutate GitHub. Pass `--ignore-related-issues 123,456` to omit known candidates from the model evidence while testing a triage result. `GITHUB_TOKEN` is used for GitHub API reads. The URL's repository is both the target and context repository. The local run uses `dev`, `README.md,CHANGELOG.md,pyproject.toml`, 8 KB per context file, 24 KB total context, and five related issues. It bypasses the `Triage` label gate, completion-marker gate, and open-state gate, so any issue can be assessed. The bot login matches the workflow only for idempotency checks.
 
 ---
 
