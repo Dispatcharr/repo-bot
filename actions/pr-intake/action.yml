@@ -1,0 +1,25 @@
+name: 'PR Intake'
+description: 'Labels and acknowledges external pull requests when they are opened or backfilled'
+inputs:
+  github-token:
+    description: 'Bot installation token with Pull requests and Issues read/write permission'
+    required: true
+  intake-label:
+    description: 'Label applied to eligible pull requests'
+    required: false
+    default: 'Triage'
+  intake-comment:
+    description: 'Comment posted on eligible pull requests'
+    required: false
+    default: ''
+  bypass-for-members:
+    description: 'If true, skip PRs opened by collaborators, members, and owners'
+    required: false
+    default: 'true'
+  dry-run:
+    description: 'Log eligible pull requests without adding labels or comments'
+    required: false
+    default: 'false'
+runs:
+  using: 'node24'
+  main: 'dist/index.js'
