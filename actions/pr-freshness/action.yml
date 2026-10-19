@@ -9,7 +9,7 @@ inputs:
     description: 'GitHub login allowed to own freshness marker comments'
     required: true
   days-before-stale:
-    description: 'Whole days of PR author inactivity before warning is posted'
+    description: 'Whole days an eligibility condition must persist before a warning is posted'
     required: true
   days-before-close:
     description: 'Whole days after warning before enforcement is applied'
@@ -38,6 +38,10 @@ inputs:
     description: 'Treat an unresolved template-enforcer compliance marker as an eligibility reason'
     required: false
     default: 'false'
+  check-drafts:
+    description: 'Treat a draft PR open for the configured duration as an eligibility reason. When enabled, drafts are checked only for their open age.'
+    required: false
+    default: 'false'
   compliance-marker:
     description: 'Hidden template-enforcer marker identifying unresolved PR compliance. Required when check-compliance is true.'
     required: false
@@ -54,12 +58,24 @@ inputs:
     description: 'If true, skip PRs whose author is a repository collaborator'
     required: false
     default: 'false'
+  bypass-labels:
+    description: 'Comma-separated labels that skip all freshness processing for a PR'
+    required: false
+    default: ''
   stale-message:
     description: 'Warning comment. Supports {pr-number}, {reasons}, {days-before-close}, and {inactive-days}.'
     required: false
     default: ''
   close-message:
     description: 'Enforcement comment. Supports {pr-number} and {reasons}.'
+    required: false
+    default: ''
+  draft-stale-message:
+    description: 'Warning comment for draft PRs. Supports {pr-number}, {reasons}, {days-before-close}, and {inactive-days}.'
+    required: false
+    default: ''
+  draft-close-message:
+    description: 'Enforcement comment for draft PRs. Supports {pr-number} and {reasons}.'
     required: false
     default: ''
   dry-run:

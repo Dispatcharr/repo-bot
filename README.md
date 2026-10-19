@@ -177,9 +177,63 @@ jobs:
 
 ---
 
+### pr-intake
+
+Labels and acknowledges external pull requests when they are opened. On `workflow_dispatch`, it backfills only open external pull requests with no labels. Member, collaborator, and owner pull requests are skipped by default.
+
+```
+uses: Dispatcharr/repo-bot/actions/pr-intake@v1
+```
+
+#### Inputs
+
+| Input | Required | Default | Description |
+|-------|----------|---------|-------------|
+| `github-token` | yes | | Bot installation token with Pull requests and Issues read/write permission |
+| `intake-label` | no | `Triage` | Label applied to eligible pull requests |
+| `intake-comment` | no | built-in message | Comment posted on eligible pull requests |
+| `bypass-for-members` | no | `true` | Skip pull requests opened by collaborators, members, and owners |
+| `dry-run` | no | `false` | Log eligible pull requests without adding labels or comments |
+
+#### Usage
+
+```yaml
+on:
+  pull_request_target:
+    types: [opened]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Preview eligible pull requests without adding labels or comments
+        required: true
+        type: boolean
+        default: true
+
+jobs:
+  intake:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/create-github-app-token@v2
+        id: app-token
+        with:
+          app-id: ${{ secrets.BOT_APP_ID }}
+          private-key: ${{ secrets.BOT_PRIVATE_KEY }}
+
+      - uses: Dispatcharr/repo-bot/actions/pr-intake@v1
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          dry-run: ${{ inputs.dry_run || 'false' }}
+          intake-comment: |
+            ## Pull request received
+
+            Thanks for contributing. Your pull request has been received and will be triaged by maintainers.
+```
+
+---
+
 ### pr-freshness
 
-Warns on and enforces a configured policy for pull requests with no recent author activity. A PR is eligible when a merge conflict has persisted for the configured duration, an effective changes-requested review has gone unanswered for that duration, or a repository collaborator's comment or review has gone unanswered for that duration. This avoids closing contributions that maintainers have not yet triaged.
+Warns on and enforces a configured policy for pull requests that need attention. A ready-for-review PR is eligible when a merge conflict has persisted for the configured duration, an effective changes-requested review has gone unanswered for that duration, or a repository collaborator's comment or review has gone unanswered for that duration. When draft checking is enabled, drafts are eligible only by their open age. This avoids closing contributions that maintainers have not yet triaged.
 
 ```
 uses: Dispatcharr/repo-bot/actions/pr-freshness@v1
@@ -190,7 +244,8 @@ uses: Dispatcharr/repo-bot/actions/pr-freshness@v1
 | Input | Required | Default | Description |
 |-------|----------|---------|-------------|
 | `github-token` | yes | | Bot installation token with Pull requests and Issues read/write permission |
-| `days-before-stale` | yes | | Whole days of author inactivity before the warning |
+| `marker-author` | yes | | GitHub login allowed to own freshness marker comments |
+| `days-before-stale` | yes | | Whole days an eligibility condition must persist before the warning |
 | `days-before-close` | yes | | Whole days after the warning before enforcement |
 | `stale-label` | no | `stale` | Label applied while waiting for author activity |
 | `check-conflicts` | no | `true` | Treat merge conflicts as an eligibility reason |
@@ -199,16 +254,20 @@ uses: Dispatcharr/repo-bot/actions/pr-freshness@v1
 | `check-maintainer-responded-stale` | no | `true` | Allow generic inactivity only after a collaborator review or comment |
 | `check-compliance` | no | `false` | Treat a matching unresolved `template-enforcer` compliance marker as an eligibility reason |
 | `compliance-marker` | when `check-compliance` is true | `''` | Hidden marker emitted by `template-enforcer` for unresolved compliance |
+| `check-drafts` | no | `false` | Treat an open draft as eligible after `days-before-stale`; when enabled, drafts are evaluated only by their open age |
 | `enforcement` | no | `close` | `close`, `lock`, `close-and-lock`, or `comment-only` |
 | `lock-reason` | no | `resolved` | Lock reason when enforcement includes lock |
 | `bypass-for-members` | no | `false` | Skip PRs opened by repository collaborators |
+| `bypass-labels` | no | `''` | Comma-separated labels that skip all freshness processing for a PR |
 | `stale-message` | no | built-in message | Warning comment; supports `{pr-number}`, `{reasons}`, `{days-before-close}`, and `{inactive-days}` |
 | `close-message` | no | built-in message | Enforcement comment; supports `{pr-number}` and `{reasons}` |
+| `draft-stale-message` | no | built-in message | Draft warning comment; supports `{pr-number}`, `{reasons}`, `{days-before-close}`, and `{inactive-days}` |
+| `draft-close-message` | no | built-in message | Draft enforcement comment; supports `{pr-number}` and `{reasons}` |
 | `dry-run` | no | `false` | Log intended changes without modifying GitHub state |
 
 The action tracks warnings with its own label and hidden comment marker. It only recognizes, deletes, or uses markers on comments authored by the authenticated bot account. For merge conflicts, it posts a visible request to resolve the conflict followed by a hidden marker, beginning the timer when the action first observes the conflict and deleting the comment once resolved. By default, conflicts on PRs that only change Markdown files are ignored. Set `conflict-ignore-patterns` to an empty value to check all files. A comment, commit, edit, or reopen by the PR author removes the warning label and comment. Author activity after a changes-requested review clears that review condition until a maintainer requests changes again. Maintainer activity does not. It never deletes source branches. Closed PRs can be reopened.
 
-When `check-compliance` is enabled, a matching bot-authored marker emitted by `template-enforcer` is another eligibility reason. It remains active until the compliance comment is removed or replaced without the marker. Author activity after the marker resets its inactivity timer without resolving the compliance condition.
+When `check-compliance` is enabled, a matching bot-authored marker emitted by `template-enforcer` is another eligibility reason. It remains active until the compliance comment is removed or replaced without the marker. Author activity after the marker resets its inactivity timer without resolving the compliance condition. When `check-drafts` is enabled, a draft PR is evaluated only by the time since it was opened, and author activity or other freshness criteria do not reset that timer. `draft-stale-message` and `draft-close-message` override the draft-specific comments without changing comments for ready-for-review PRs. Any PR with a configured `bypass-labels` label is skipped without adding, removing, commenting, closing, or locking.
 
 #### Usage
 
@@ -237,12 +296,17 @@ jobs:
       - uses: Dispatcharr/repo-bot/actions/pr-freshness@v1
         with:
           github-token: ${{ steps.app-token.outputs.token }}
+          marker-author: dispatcharr-issues-bot[bot]
           days-before-stale: 14
           days-before-close: 7
           check-compliance: true
           compliance-marker: repo-bot:pr-compliance
+          check-drafts: true
+          bypass-labels: On Hold
           enforcement: close
           bypass-for-members: true
+          draft-stale-message: |
+            This draft has been open for {inactive-days} days. Please mark it ready for review within {days-before-close} days.
 ```
 
 For a safe first run, set `dry-run: true`, inspect the logs, then remove it. The GitHub App needs Metadata read plus Pull requests and Issues read/write permissions. The action only inspects API metadata and never checks out PR code.
