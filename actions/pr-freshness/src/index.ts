@@ -22,6 +22,12 @@ const DEFAULT_STALE_MESSAGE =
 const DEFAULT_CLOSE_MESSAGE =
   'This pull request was closed after the freshness grace period elapsed without author activity ({reasons}). ' +
   'It can be reopened when it is ready to continue.'
+const DEFAULT_DRAFT_STALE_MESSAGE =
+  'This draft pull request has been open for {inactive-days} days. ' +
+  'Please mark it ready for review within {days-before-close} days or it will be closed. You may reopen it later if needed.'
+const DEFAULT_DRAFT_CLOSE_MESSAGE =
+  'This draft pull request was closed after remaining open through the freshness grace period. ' +
+  'It can be reopened when it is ready for review.'
 const CONFLICT_MESSAGE =
   'Merge conflicts were detected. Please resolve them to keep this pull request eligible for review.'
 
@@ -244,6 +250,8 @@ async function run(): Promise<void> {
   const staleLabel = core.getInput('stale-label') || 'stale'
   const staleMessage = core.getInput('stale-message') || DEFAULT_STALE_MESSAGE
   const closeMessage = core.getInput('close-message') || DEFAULT_CLOSE_MESSAGE
+  const draftStaleMessage = core.getInput('draft-stale-message') || DEFAULT_DRAFT_STALE_MESSAGE
+  const draftCloseMessage = core.getInput('draft-close-message') || DEFAULT_DRAFT_CLOSE_MESSAGE
   const enforcement = (core.getInput('enforcement') || 'close') as Enforcement
   const lockReason = (core.getInput('lock-reason') || 'resolved') as LockReason
   const checkConflicts = core.getBooleanInput('check-conflicts')
@@ -256,6 +264,11 @@ async function run(): Promise<void> {
   const checkCompliance = core.getBooleanInput('check-compliance')
   const complianceMarker = core.getInput('compliance-marker').trim()
   const bypassForMembers = core.getBooleanInput('bypass-for-members')
+  const bypassLabels = core.getInput('bypass-labels')
+    .split(',')
+    .map(label => label.trim())
+    .filter(Boolean)
+  const checkDrafts = core.getBooleanInput('check-drafts')
   const dryRun = core.getBooleanInput('dry-run')
 
   let daysBeforeStale: number
@@ -276,7 +289,7 @@ async function run(): Promise<void> {
     core.setFailed(`Invalid lock-reason: "${lockReason}". Must be one of: ${VALID_LOCK_REASONS.join(', ')}`)
     return
   }
-  if (!checkConflicts && !checkChangesRequested && !checkMaintainerRespondedStale && !checkCompliance) {
+  if (!checkConflicts && !checkChangesRequested && !checkMaintainerRespondedStale && !checkCompliance && !checkDrafts) {
     core.setFailed('Enable at least one eligibility check')
     return
   }
@@ -299,6 +312,11 @@ async function run(): Promise<void> {
   for (const listedPr of pullRequests) {
     const prNumber = listedPr.number
     const { data: pr } = await octokit.rest.pulls.get({ owner, repo, pull_number: prNumber })
+    const bypassLabel = bypassLabels.find(label => hasLabel(pr.labels, label))
+    if (bypassLabel) {
+      core.info(`Skipping PR #${prNumber}: it has the bypass label "${bypassLabel}"`)
+      continue
+    }
     const author = pr.user?.login
     if (!author) {
       core.warning(`Skipping PR #${prNumber}: author is unavailable`)
@@ -308,80 +326,85 @@ async function run(): Promise<void> {
       core.info(`Skipping PR #${prNumber}: ${author} is a repository collaborator`)
       continue
     }
-    const lastAuthorActivity = await latestAuthorActivity(
-      octokit,
-      owner,
-      repo,
-      prNumber,
-      author,
-      new Date(pr.created_at),
-    )
-    const inactiveSince = lastAuthorActivity ?? new Date(pr.created_at)
-
-    const hasMergeConflict = pr.mergeable === false || pr.mergeable_state === 'dirty'
-    const changedFiles = checkConflicts && hasMergeConflict && conflictIgnorePatterns.length > 0
-      ? await octokit.paginate(octokit.rest.pulls.listFiles, {
-          owner,
-          repo,
-          pull_number: prNumber,
-          per_page: 100,
-        })
-      : []
-    const conflicted = checkConflicts && hasMergeConflict && (
-      conflictIgnorePatterns.length === 0 ||
-      changedFiles.some(file => !conflictIgnorePatterns.some(pattern => matchesPattern(file.filename, pattern)))
-    )
     const comments = await octokit.paginate(octokit.rest.issues.listComments, {
       owner,
       repo,
       issue_number: prNumber,
       per_page: 100,
     })
-    const conflictMarker = [...comments].reverse().find(comment =>
-      isOwnedMarkerComment(comment, CONFLICT_MARKER, markerAuthor),
-    )
-    const complianceComment = checkCompliance
-      ? [...comments].reverse().find(comment => isOwnedMarkerComment(comment, complianceMarker, markerAuthor))
-      : undefined
-    let conflictObservedAt = conflictMarker?.created_at ? new Date(conflictMarker.created_at) : null
-    if (conflicted && !conflictObservedAt) {
-      await createComment(octokit, owner, repo, prNumber, `${CONFLICT_MESSAGE}\n\n${CONFLICT_MARKER}`, dryRun)
-      conflictObservedAt = now
-      core.info(`Started conflict timer for PR #${prNumber}`)
-    } else if (!conflicted && conflictMarker) {
-      await deleteComment(octokit, owner, repo, conflictMarker.id, dryRun)
-      core.info(`Cleared conflict timer for PR #${prNumber}`)
-    }
+    const draftOnly = checkDrafts && pr.draft
+    let eligibilityReasons: EligibilityReason[]
+    if (draftOnly) {
+      eligibilityReasons = [{ message: 'draft PR open', eligibleSince: new Date(pr.created_at) }]
+    } else {
+      const lastAuthorActivity = await latestAuthorActivity(
+        octokit,
+        owner,
+        repo,
+        prNumber,
+        author,
+        new Date(pr.created_at),
+      )
+      const inactiveSince = lastAuthorActivity ?? new Date(pr.created_at)
+      const hasMergeConflict = pr.mergeable === false || pr.mergeable_state === 'dirty'
+      const changedFiles = checkConflicts && hasMergeConflict && conflictIgnorePatterns.length > 0
+        ? await octokit.paginate(octokit.rest.pulls.listFiles, {
+            owner,
+            repo,
+            pull_number: prNumber,
+            per_page: 100,
+          })
+        : []
+      const conflicted = checkConflicts && hasMergeConflict && (
+        conflictIgnorePatterns.length === 0 ||
+        changedFiles.some(file => !conflictIgnorePatterns.some(pattern => matchesPattern(file.filename, pattern)))
+      )
+      const conflictMarker = [...comments].reverse().find(comment =>
+        isOwnedMarkerComment(comment, CONFLICT_MARKER, markerAuthor),
+      )
+      const complianceComment = checkCompliance
+        ? [...comments].reverse().find(comment => isOwnedMarkerComment(comment, complianceMarker, markerAuthor))
+        : undefined
+      let conflictObservedAt = conflictMarker?.created_at ? new Date(conflictMarker.created_at) : null
+      if (conflicted && !conflictObservedAt) {
+        await createComment(octokit, owner, repo, prNumber, `${CONFLICT_MESSAGE}\n\n${CONFLICT_MARKER}`, dryRun)
+        conflictObservedAt = now
+        core.info(`Started conflict timer for PR #${prNumber}`)
+      } else if (!conflicted && conflictMarker) {
+        await deleteComment(octokit, owner, repo, conflictMarker.id, dryRun)
+        core.info(`Cleared conflict timer for PR #${prNumber}`)
+      }
 
-    const [changesRequestedAt, maintainerResponseAt] = await Promise.all([
-      checkChangesRequested ? latestChangesRequested(octokit, owner, repo, prNumber, author, collaboratorCache) : null,
-      checkMaintainerRespondedStale
-        ? latestMaintainerResponse(octokit, owner, repo, prNumber, author, inactiveSince, collaboratorCache)
-        : null,
-    ])
-    const eligibilityReasons: EligibilityReason[] = [
-      ...(conflictObservedAt ? [{
-        message: 'merge conflicts',
-        // Author activity resets a warning, so begin a fresh conflict interval.
-        eligibleSince: lastAuthorActivity && lastAuthorActivity.getTime() > conflictObservedAt.getTime()
-          ? lastAuthorActivity
-          : conflictObservedAt,
-      }] : []),
-      ...(changesRequestedAt && (!lastAuthorActivity || lastAuthorActivity.getTime() <= changesRequestedAt.getTime()) ? [{
-        message: 'changes requested',
-        eligibleSince: changesRequestedAt,
-      }] : []),
-      ...(maintainerResponseAt ? [{
-        message: 'maintainer response without author follow-up',
-        eligibleSince: maintainerResponseAt,
-      }] : []),
-      ...(complianceComment?.created_at ? [{
-        message: 'unresolved PR compliance',
-        eligibleSince: lastAuthorActivity && lastAuthorActivity.getTime() > new Date(complianceComment.created_at).getTime()
-          ? lastAuthorActivity
-          : new Date(complianceComment.created_at),
-      }] : []),
-    ]
+      const [changesRequestedAt, maintainerResponseAt] = await Promise.all([
+        checkChangesRequested ? latestChangesRequested(octokit, owner, repo, prNumber, author, collaboratorCache) : null,
+        checkMaintainerRespondedStale
+          ? latestMaintainerResponse(octokit, owner, repo, prNumber, author, inactiveSince, collaboratorCache)
+          : null,
+      ])
+      eligibilityReasons = [
+        ...(conflictObservedAt ? [{
+          message: 'merge conflicts',
+          // Author activity resets a warning, so begin a fresh conflict interval.
+          eligibleSince: lastAuthorActivity && lastAuthorActivity.getTime() > conflictObservedAt.getTime()
+            ? lastAuthorActivity
+            : conflictObservedAt,
+        }] : []),
+        ...(changesRequestedAt && (!lastAuthorActivity || lastAuthorActivity.getTime() <= changesRequestedAt.getTime()) ? [{
+          message: 'changes requested',
+          eligibleSince: changesRequestedAt,
+        }] : []),
+        ...(maintainerResponseAt ? [{
+          message: 'maintainer response without author follow-up',
+          eligibleSince: maintainerResponseAt,
+        }] : []),
+        ...(complianceComment?.created_at ? [{
+          message: 'unresolved PR compliance',
+          eligibleSince: lastAuthorActivity && lastAuthorActivity.getTime() > new Date(complianceComment.created_at).getTime()
+            ? lastAuthorActivity
+            : new Date(complianceComment.created_at),
+        }] : []),
+      ]
+    }
     const reasons = eligibilityReasons
       .filter(reason => daysSince(reason.eligibleSince, now) >= daysBeforeStale)
       .map(reason => reason.message)
@@ -399,7 +422,7 @@ async function run(): Promise<void> {
           core.info(`PR #${prNumber} has ${staleLabel} but no active freshness eligibility reason`)
           continue
         }
-        const body = `${format(staleMessage, {
+        const body = `${format(draftOnly ? draftStaleMessage : staleMessage, {
           'pr-number': String(prNumber),
           reasons: reasons.join(', '),
           'days-before-close': String(daysBeforeClose),
@@ -410,7 +433,9 @@ async function run(): Promise<void> {
         continue
       }
       const warnedAt = new Date(warning.created_at)
-      const authorActivity = await latestAuthorActivity(octokit, owner, repo, prNumber, author, warnedAt)
+      const authorActivity = draftOnly
+        ? null
+        : await latestAuthorActivity(octokit, owner, repo, prNumber, author, warnedAt)
       const authorActive = authorActivity !== null
       if (authorActive || reasons.length === 0) {
         if (dryRun) {
@@ -434,7 +459,10 @@ async function run(): Promise<void> {
         continue
       }
 
-      const body = `${format(closeMessage, { 'pr-number': String(prNumber), reasons: reasons.join(', ') })}\n\n${ENFORCED_MARKER}`
+      const body = `${format(draftOnly ? draftCloseMessage : closeMessage, {
+        'pr-number': String(prNumber),
+        reasons: reasons.join(', '),
+      })}\n\n${ENFORCED_MARKER}`
       await createComment(octokit, owner, repo, prNumber, body, dryRun)
       if (enforcement === 'close' || enforcement === 'close-and-lock') {
         if (dryRun) core.info(`[dry-run] Would close PR #${prNumber}`)
@@ -453,7 +481,7 @@ async function run(): Promise<void> {
       continue
     }
 
-    const body = `${format(staleMessage, {
+    const body = `${format(draftOnly ? draftStaleMessage : staleMessage, {
       'pr-number': String(prNumber),
       reasons: reasons.join(', '),
       'days-before-close': String(daysBeforeClose),
