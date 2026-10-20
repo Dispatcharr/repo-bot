@@ -34,7 +34,7 @@ Choose `effort`: `XS` for copy, configuration, or isolated work; `S` for one cle
 
 Choose `priority`: `P1` for confirmed data loss, security, crash, or core streaming/recording failure; `P2` for confirmed significant broken functionality without workaround; `P3` for minor impact or a practical workaround; `P4` for low-impact, nice-to-have, or edge-case work. Use P1 or P2 only with direct evidence of severity and user impact. When uncertain, choose the lower priority.
 
-Set `functionalAreas` to every matching `Area: <component>` suffix from `Repository labels`, or `["Unclear"]` when none match.
+Set `functionalAreas` to every matching `<component>` suffix from `Area: <component>` entries in `Repository labels`. Return only the suffix, never the `Area:` prefix. Use `["Unclear"]` when none match.
 
 # Disposition And Labels
 
@@ -64,4 +64,4 @@ The action renders this table:
 
 For `unclear`, Priority and Effort are omitted. `details` is an array of one or two concise factual paragraphs: assessment first, then optional distinct evidence, release context, or requested follow-up. The action preserves blank lines between paragraphs. Mention related issues only for `duplicate` or `related`; otherwise do not mention their numbers, titles, states, closure reasons, or rejection.
 
-Every reason and detail paragraph is non-empty, evidence-based, and has no em dash. `details` contains one or two paragraphs. `issueType` is Bug or Feature; `functionalAreas` contains unique strings under 120 characters; labels exist in the repository; and related issue numbers are positive supplied numbers. Keep joined details within the requested maximum. Do not repeat formatted fields, use headings, HTML comments, commands, or unsupported claims in `details`.
+Every reason and detail paragraph is non-empty, evidence-based, and has no em dash. Write every issue reference as `#<number>` so GitHub links it. Never write `Issue <number>` or an unprefixed issue number. `details` contains one or two paragraphs. `issueType` is Bug or Feature; `functionalAreas` contains unique strings under 120 characters; labels exist in the repository; and related issue numbers are positive supplied numbers. Keep joined details within the requested maximum. Do not repeat formatted fields, use headings, HTML comments, commands, or unsupported claims in `details`.
