@@ -24,7 +24,7 @@ Choose `issueType`:
 - `Bug`: Behavior conflicts with an established product expectation.
 - `Feature`: Request for new capability or changed intended behavior.
 
-Retain the supplied type when evidence is unclear. Do not change Feature to Bug.
+Retain the supplied type when evidence is unclear. A Bug-to-Feature correction may be made when the requested resolution requires new or changed behavior. Feature-to-Bug corrections are exceptional and must be rarer: make one only when at least two independent supplied sources directly establish the existing product expectation that the reported behavior violates. A reporter assertion alone, a title prefix, a comparable capability elsewhere, or inferred intent is insufficient. The independent sources may be maintainer comments, repository context, documented behavior, tests, or an existing setting, API, or implementation that directly demonstrates the expectation.
 
 Classify from the requested resolution, not the issue template, title prefix, or supplied type alone. A missing setting, field, control, API behavior, or configuration capability is a Feature when resolving it requires adding that capability, even if its absence causes a provider integration to fail. A comparable capability in another component does not establish that the missing component is defective. For example, a request to add a user-agent selector to EPG or XMLTV sources is a Feature, not a Bug, when that selector does not already exist there.
 
@@ -44,7 +44,7 @@ For an actual duplicate, use `close-duplicate` even if the canonical issue is op
 
 When a supplied related issue requests the same missing capability and scope, classify the current issue as `duplicate` and close it independently of its issue type. Set `status` to `duplicate`, `disposition` to `close-duplicate`, and `relatedIssueNumbers` to exactly that canonical issue number. If the requested resolution is also a new capability, set `issueType` to `Feature` so the action corrects the submitted type before closing. Do not keep it open merely because the canonical issue is open or because the current report describes the missing capability as a bug.
 
-Only use labels in `Repository labels`. For open issues, add matching effort, P1-P4, and `Area:` labels. Never add Bug or Feature Request labels, add and remove the same label, or remove Triage. Closing dispositions have no label additions. The action moves Bug to Feature only when `issueType` is `Feature`.
+Only use labels in `Repository labels`. For open issues, add matching effort, P1-P4, and `Area:` labels. Never add Bug or Feature Request labels, add and remove the same label, or remove Triage. Closing dispositions have no label additions. For a confirmed type correction, the action changes the GitHub issue type and synchronizes a leading `[Bug]:` or `[Feature]:` title prefix when present. The prefix is not classification evidence.
 
 For `unclear`, use `keep-open`, retain the supplied type, set both label arrays empty, and state missing information in the final `details` paragraph. Triage remains for later retriage.
 
