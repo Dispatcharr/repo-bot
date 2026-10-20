@@ -11,7 +11,6 @@ const VALID_PRIORITIES = ['P1', 'P2', 'P3', 'P4'] as const
 const VALID_ISSUE_TYPES = ['Bug', 'Feature'] as const
 const CLOSING_DISPOSITIONS = new Set(['close-completed', 'close-duplicate', 'close-not-planned', 'close-invalid', 'close-wontfix', 'close-stale', 'working-as-designed'])
 const ISSUE_TYPE_LABELS = new Set(['Bug', 'Feature Request'])
-const ISSUE_TYPE_BADGE_COLORS = { Bug: 'red', Feature: 'blue' } as const
 
 type Provider = typeof VALID_PROVIDERS[number]
 type Octokit = ReturnType<typeof github.getOctokit>
@@ -501,9 +500,8 @@ function labelKey(name: string): string {
   return name.trim().toLowerCase()
 }
 
-function shieldsBadge(message: string, color: string | undefined): string | undefined {
-  if (!color || (!/^[0-9a-f]{6}$/i.test(color) && !Object.values(ISSUE_TYPE_BADGE_COLORS).includes(color as typeof ISSUE_TYPE_BADGE_COLORS[keyof typeof ISSUE_TYPE_BADGE_COLORS]))) return undefined
-  return `![${message.replace(/[\[\]\\]/g, '\\$&')}](https://img.shields.io/badge/${encodeURIComponent(message)}-${color})`
+function labelUrl(serverUrl: string, owner: string, repo: string, name: string): string {
+  return `${serverUrl.replace(/\/$/, '')}/${owner}/${repo}/labels/${encodeURIComponent(name)}`
 }
 
 async function run(): Promise<void> {
@@ -576,7 +574,7 @@ async function run(): Promise<void> {
     .slice(0, maxRelatedIssues)
   if (ignoredRelatedIssueNumbers.size > 0) core.info(`Ignoring related issue candidate(s) for dry run: ${[...ignoredRelatedIssueNumbers].join(', ')}`)
   const repositoryLabels = new Set(labels.map(label => label.name))
-  const labelColors = new Map(labels.flatMap(label => typeof label.name === 'string' && typeof label.color === 'string' ? [[labelKey(label.name), label.color] as const] : []))
+  const repositoryLabelKeys = new Set(labels.map(label => labelKey(label.name)))
   const relatedIssueEvidence = await collectRelatedIssueEvidence(
     octokit,
     contextRepository.owner,
@@ -636,15 +634,17 @@ async function run(): Promise<void> {
   const priorityReason = linkedIssueReferences(result.priorityReason)
   const effortReason = linkedIssueReferences(result.effortReason)
   const dispositionReason = linkedIssueReferences(result.dispositionReason)
-  const labelBadge = (name: string, fallback = name): string => shieldsBadge(name, labelColors.get(labelKey(name))) ?? fallback
+  const labelReference = (name: string, fallback = name): string => repositoryLabelKeys.has(labelKey(name))
+    ? labelUrl(process.env.GITHUB_SERVER_URL || 'https://github.com', owner, repoName, name)
+    : fallback
   const functionalAreasText = result.functionalAreas.join(', ')
-  const functionalAreas = result.functionalAreas.map(area => labelBadge(`Area: ${area}`, area)).join(' ')
+  const functionalAreas = result.functionalAreas.map(area => labelReference(`Area: ${area}`, area)).join(' ')
   const displayedIssueType = issueTypeChanged ? result.issueType : currentIssueType ?? result.issueType
   const issueTypeText = `${displayedIssueType}${issueTypeChanged ? ` (move from ${currentTriageIssueType})` : ''}`
-  const issueType = `${shieldsBadge(displayedIssueType, ISSUE_TYPE_BADGE_COLORS[displayedIssueType as keyof typeof ISSUE_TYPE_BADGE_COLORS]) ?? displayedIssueType}${issueTypeChanged ? ` (move from ${currentTriageIssueType})` : ''}`
+  const issueType = issueTypeText
   const reportTable = result.status === 'unclear'
     ? `| | |\n| --- | --- |\n| Type | ${tableCell(issueType)} |\n| Area | ${tableCell(functionalAreas)} |\n| Details | ${tableCell(details)} |`
-    : `| | |\n| --- | --- |\n| Type | ${tableCell(issueType)} |\n| Area | ${tableCell(functionalAreas)} |\n| Priority | ${tableCell(labelBadge(result.priority))} ${tableCell(priorityReason)} |\n| Effort | ${tableCell(labelBadge(result.effort))} ${tableCell(effortReason)} |\n| Details | ${tableCell(details)} |`
+    : `| | |\n| --- | --- |\n| Type | ${tableCell(issueType)} |\n| Area | ${tableCell(functionalAreas)} |\n| Priority | ${tableCell(labelReference(result.priority))} ${tableCell(priorityReason)} |\n| Effort | ${tableCell(labelReference(result.effort))} ${tableCell(effortReason)} |\n| Details | ${tableCell(details)} |`
   const summaryTable = result.status === 'unclear'
     ? [
         [{ data: '', header: true }, { data: '', header: true }],
