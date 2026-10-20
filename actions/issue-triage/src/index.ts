@@ -11,6 +11,7 @@ const VALID_PRIORITIES = ['P1', 'P2', 'P3', 'P4'] as const
 const VALID_ISSUE_TYPES = ['Bug', 'Feature'] as const
 const CLOSING_DISPOSITIONS = new Set(['close-completed', 'close-duplicate', 'close-not-planned', 'close-invalid', 'close-wontfix', 'close-stale', 'working-as-designed'])
 const ISSUE_TYPE_LABELS = new Set(['Bug', 'Feature Request'])
+const ISSUE_TYPE_BADGE_COLORS = { Bug: 'red', Feature: 'blue' } as const
 
 type Provider = typeof VALID_PROVIDERS[number]
 type Octokit = ReturnType<typeof github.getOctokit>
@@ -492,6 +493,11 @@ function tableCell(value: string): string {
   return value.replace(/\|/g, '\\|').replace(/\r?\n/g, '<br>')
 }
 
+function shieldsBadge(message: string, color: string | undefined): string | undefined {
+  if (!color || (!/^[0-9a-f]{6}$/i.test(color) && !Object.values(ISSUE_TYPE_BADGE_COLORS).includes(color as typeof ISSUE_TYPE_BADGE_COLORS[keyof typeof ISSUE_TYPE_BADGE_COLORS]))) return undefined
+  return `![${message.replace(/[\[\]\\]/g, '\\$&')}](https://img.shields.io/badge/${encodeURIComponent(message)}-${color})`
+}
+
 async function run(): Promise<void> {
   const token = core.getInput('github-token', { required: true })
   const botLogin = core.getInput('bot-login', { required: true })
@@ -562,6 +568,7 @@ async function run(): Promise<void> {
     .slice(0, maxRelatedIssues)
   if (ignoredRelatedIssueNumbers.size > 0) core.info(`Ignoring related issue candidate(s) for dry run: ${[...ignoredRelatedIssueNumbers].join(', ')}`)
   const repositoryLabels = new Set(labels.map(label => label.name))
+  const labelColors = new Map(labels.flatMap(label => typeof label.name === 'string' && typeof label.color === 'string' ? [[label.name, label.color] as const] : []))
   const relatedIssueEvidence = await collectRelatedIssueEvidence(
     octokit,
     contextRepository.owner,
@@ -618,11 +625,13 @@ async function run(): Promise<void> {
     throw new Error('close-duplicate requires exactly one supplied related canonical issue number')
   }
   const details = result.details.join('\n\n')
-  const functionalAreas = result.functionalAreas.join(', ')
-  const issueType = issueTypeChanged ? `${result.issueType} (move from ${currentTriageIssueType})` : currentIssueType ?? result.issueType
+  const labelBadge = (name: string, fallback = name): string => shieldsBadge(name, labelColors.get(name)) ?? fallback
+  const functionalAreas = result.functionalAreas.map(area => labelBadge(`Area: ${area}`, area)).join(' ')
+  const displayedIssueType = issueTypeChanged ? result.issueType : currentIssueType ?? result.issueType
+  const issueType = `${shieldsBadge(displayedIssueType, ISSUE_TYPE_BADGE_COLORS[displayedIssueType as keyof typeof ISSUE_TYPE_BADGE_COLORS]) ?? displayedIssueType}${issueTypeChanged ? ` (move from ${currentTriageIssueType})` : ''}`
   const reportTable = result.status === 'unclear'
     ? `| | |\n| --- | --- |\n| Type | ${tableCell(issueType)} |\n| Area | ${tableCell(functionalAreas)} |\n| Details | ${tableCell(details)} |`
-    : `| | |\n| --- | --- |\n| Type | ${tableCell(issueType)} |\n| Area | ${tableCell(functionalAreas)} |\n| Priority | ${tableCell(result.priority)}. ${tableCell(result.priorityReason)} |\n| Effort | ${tableCell(result.effort)}. ${tableCell(result.effortReason)} |\n| Details | ${tableCell(details)} |`
+    : `| | |\n| --- | --- |\n| Type | ${tableCell(issueType)} |\n| Area | ${tableCell(functionalAreas)} |\n| Priority | ${tableCell(labelBadge(result.priority))}. ${tableCell(result.priorityReason)} |\n| Effort | ${tableCell(labelBadge(result.effort))}. ${tableCell(result.effortReason)} |\n| Details | ${tableCell(details)} |`
   const summaryTable = result.status === 'unclear'
     ? [
         [{ data: '', header: true }, { data: '', header: true }],
