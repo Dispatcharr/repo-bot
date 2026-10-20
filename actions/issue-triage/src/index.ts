@@ -11,6 +11,7 @@ const VALID_PRIORITIES = ['P1', 'P2', 'P3', 'P4'] as const
 const VALID_ISSUE_TYPES = ['Bug', 'Feature'] as const
 const CLOSING_DISPOSITIONS = new Set(['close-completed', 'close-duplicate', 'close-not-planned', 'close-invalid', 'close-wontfix', 'close-stale', 'working-as-designed'])
 const ISSUE_TYPE_LABELS = new Set(['Bug', 'Feature Request'])
+const ISSUE_TYPE_BADGE_COLORS = { Bug: 'red', Feature: 'blue' } as const
 
 type Provider = typeof VALID_PROVIDERS[number]
 type Octokit = ReturnType<typeof github.getOctokit>
@@ -460,7 +461,7 @@ function validateResult(value: unknown, repositoryLabels: Set<string>, allowedDi
   const effort = string('effort') as TriageResult['effort']
   const priority = string('priority') as TriageResult['priority']
   const issueType = string('issueType') as TriageResult['issueType']
-  const functionalAreas = strings('functionalAreas')
+  const functionalAreas = [...new Set(strings('functionalAreas').map(area => area.replace(/^Area:\s*/i, '').trim()).filter(Boolean))]
   const disposition = string('disposition')
   if (!VALID_STATUSES.includes(status)) throw new Error(`Invalid status: ${status}`)
   if (!VALID_EFFORTS.includes(effort)) throw new Error(`Invalid effort: ${effort}`)
@@ -490,6 +491,19 @@ function validateResult(value: unknown, repositoryLabels: Set<string>, allowedDi
 
 function tableCell(value: string): string {
   return value.replace(/\|/g, '\\|').replace(/\r?\n/g, '<br>')
+}
+
+function linkedIssueReferences(value: string): string {
+  return value.replace(/\bissues?(?:\s+number)?\s*#?\s*(\d+)\b/gi, '#$1')
+}
+
+function labelKey(name: string): string {
+  return name.trim().toLowerCase()
+}
+
+function shieldsBadge(message: string, color: string | undefined): string | undefined {
+  if (!color || (!/^[0-9a-f]{6}$/i.test(color) && !Object.values(ISSUE_TYPE_BADGE_COLORS).includes(color as typeof ISSUE_TYPE_BADGE_COLORS[keyof typeof ISSUE_TYPE_BADGE_COLORS]))) return undefined
+  return `![${message.replace(/[\[\]\\]/g, '\\$&')}](https://img.shields.io/badge/${encodeURIComponent(message)}-${color})`
 }
 
 async function run(): Promise<void> {
@@ -562,6 +576,7 @@ async function run(): Promise<void> {
     .slice(0, maxRelatedIssues)
   if (ignoredRelatedIssueNumbers.size > 0) core.info(`Ignoring related issue candidate(s) for dry run: ${[...ignoredRelatedIssueNumbers].join(', ')}`)
   const repositoryLabels = new Set(labels.map(label => label.name))
+  const labelColors = new Map(labels.flatMap(label => typeof label.name === 'string' && typeof label.color === 'string' ? [[labelKey(label.name), label.color] as const] : []))
   const relatedIssueEvidence = await collectRelatedIssueEvidence(
     octokit,
     contextRepository.owner,
@@ -617,32 +632,40 @@ async function run(): Promise<void> {
   if (result.disposition === 'close-duplicate' && (result.relatedIssueNumbers.length !== 1 || !eligibleRelatedIssues.some(item => item.number === duplicateIssueNumber))) {
     throw new Error('close-duplicate requires exactly one supplied related canonical issue number')
   }
-  const details = result.details.join('\n\n')
-  const functionalAreas = result.functionalAreas.join(', ')
-  const issueType = issueTypeChanged ? `${result.issueType} (move from ${currentTriageIssueType})` : currentIssueType ?? result.issueType
+  const details = linkedIssueReferences(result.details.join('\n\n'))
+  const priorityReason = linkedIssueReferences(result.priorityReason)
+  const effortReason = linkedIssueReferences(result.effortReason)
+  const dispositionReason = linkedIssueReferences(result.dispositionReason)
+  const labelBadge = (name: string, fallback = name): string => shieldsBadge(name, labelColors.get(labelKey(name))) ?? fallback
+  const functionalAreasText = result.functionalAreas.join(', ')
+  const functionalAreas = result.functionalAreas.map(area => labelBadge(`Area: ${area}`, area)).join(' ')
+  const displayedIssueType = issueTypeChanged ? result.issueType : currentIssueType ?? result.issueType
+  const issueTypeText = `${displayedIssueType}${issueTypeChanged ? ` (move from ${currentTriageIssueType})` : ''}`
+  const issueType = `${shieldsBadge(displayedIssueType, ISSUE_TYPE_BADGE_COLORS[displayedIssueType as keyof typeof ISSUE_TYPE_BADGE_COLORS]) ?? displayedIssueType}${issueTypeChanged ? ` (move from ${currentTriageIssueType})` : ''}`
   const reportTable = result.status === 'unclear'
     ? `| | |\n| --- | --- |\n| Type | ${tableCell(issueType)} |\n| Area | ${tableCell(functionalAreas)} |\n| Details | ${tableCell(details)} |`
-    : `| | |\n| --- | --- |\n| Type | ${tableCell(issueType)} |\n| Area | ${tableCell(functionalAreas)} |\n| Priority | ${tableCell(result.priority)}. ${tableCell(result.priorityReason)} |\n| Effort | ${tableCell(result.effort)}. ${tableCell(result.effortReason)} |\n| Details | ${tableCell(details)} |`
+    : `| | |\n| --- | --- |\n| Type | ${tableCell(issueType)} |\n| Area | ${tableCell(functionalAreas)} |\n| Priority | ${tableCell(labelBadge(result.priority))} ${tableCell(priorityReason)} |\n| Effort | ${tableCell(labelBadge(result.effort))} ${tableCell(effortReason)} |\n| Details | ${tableCell(details)} |`
   const summaryTable = result.status === 'unclear'
     ? [
         [{ data: '', header: true }, { data: '', header: true }],
-        ['Type', tableCell(issueType)],
-        ['Area', tableCell(functionalAreas)],
+        ['Type', tableCell(issueTypeText)],
+        ['Area', tableCell(functionalAreasText)],
         ['Details', tableCell(details)],
-        ['Recommendation', tableCell(`${result.disposition}. ${result.dispositionReason}`)],
+        ['Recommendation', tableCell(`${result.disposition}. ${dispositionReason}`)],
       ]
     : [
         [{ data: '', header: true }, { data: '', header: true }],
-        ['Type', tableCell(issueType)],
-        ['Area', tableCell(functionalAreas)],
-        ['Priority', tableCell(`${result.priority}. ${result.priorityReason}`)],
-        ['Effort', tableCell(`${result.effort}. ${result.effortReason}`)],
+        ['Type', tableCell(issueTypeText)],
+        ['Area', tableCell(functionalAreasText)],
+        ['Priority', tableCell(`${result.priority}. ${priorityReason}`)],
+        ['Effort', tableCell(`${result.effort}. ${effortReason}`)],
         ['Details', tableCell(details)],
-        ['Recommendation', tableCell(`${result.disposition}. ${result.dispositionReason}`)],
+        ['Recommendation', tableCell(`${result.disposition}. ${dispositionReason}`)],
       ]
   const report = `${reportTable}\n\n<!-- ${marker} -->`
   await core.summary.addHeading(`Issue triage: #${issueNumber}`).addTable(summaryTable).addRaw(dryRun ? '\n\n*Dry run: no changes were applied.*' : '').write()
   if (dryRun) {
+    core.info(`[dry-run] Would post comment:\n${report}`)
     core.info(`[dry-run] Would add labels: ${labelsToAdd.join(', ') || '(none)'}`)
     core.info(`[dry-run] Would remove labels: ${[...new Set([...result.labelsToRemove, ...(result.status === 'unclear' ? [] : [triageLabel])])].join(', ') || '(none)'}`)
     core.info(`[dry-run] Would change issue type: ${issueTypeChanged && allowTypeChanges ? `${currentTriageIssueType} to ${result.issueType}` : '(none)'}`)
