@@ -71,6 +71,12 @@ function issueTypeName(issue: unknown): string | null {
   return typeof type?.name === 'string' ? type.name : null
 }
 
+function titleWithIssueTypePrefix(title: string, issueType: typeof VALID_ISSUE_TYPES[number]): string | undefined {
+  const prefix = title.match(/^\[(Bug|Feature)\]:/)
+  if (!prefix || prefix[1] === issueType) return undefined
+  return `[${issueType}]:${title.slice(prefix[0].length)}`
+}
+
 function markerComment(comment: { body?: string | null, user?: { login?: string | null, type?: string | null } | null }, marker: string, botLogin: string): boolean {
   return comment.body?.includes(`<!-- ${marker} -->`) === true && (comment.user?.login === botLogin || comment.user?.type === 'Bot')
 }
@@ -596,7 +602,9 @@ async function run(): Promise<void> {
   if (!result) throw new Error('Inference response validation did not produce a result')
   core.info(`Phase 2/2 complete in ${((Date.now() - triageStartedAt) / 1000).toFixed(1)}s. Validated model output`)
   const currentIssueType = issueTypeName(issue)
-  const moveToFeature = result.status !== 'unclear' && currentIssueType === 'Bug' && result.issueType === 'Feature'
+  const currentTriageIssueType = VALID_ISSUE_TYPES.find(issueType => issueType === currentIssueType)
+  const issueTypeChanged = result.status !== 'unclear' && currentTriageIssueType !== undefined && currentTriageIssueType !== result.issueType
+  const updatedTitle = issueTypeChanged ? titleWithIssueTypePrefix(issue.title, result.issueType) : undefined
   core.info(`Validated triage for issue #${issueNumber}: ${JSON.stringify({ status: result.status, effort: result.effort, priority: result.priority, issueType: result.issueType, functionalAreas: result.functionalAreas, disposition: result.disposition, labelsToAdd: result.labelsToAdd, labelsToRemove: result.labelsToRemove, relatedIssueNumbers: result.relatedIssueNumbers })}`)
 
   const closing = CLOSING_DISPOSITIONS.has(result.disposition)
@@ -611,7 +619,7 @@ async function run(): Promise<void> {
   }
   const details = result.details.join('\n\n')
   const functionalAreas = result.functionalAreas.join(', ')
-  const issueType = moveToFeature ? 'Feature (move from Bug)' : currentIssueType ?? result.issueType
+  const issueType = issueTypeChanged ? `${result.issueType} (move from ${currentTriageIssueType})` : currentIssueType ?? result.issueType
   const reportTable = result.status === 'unclear'
     ? `| | |\n| --- | --- |\n| Type | ${tableCell(issueType)} |\n| Area | ${tableCell(functionalAreas)} |\n| Details | ${tableCell(details)} |`
     : `| | |\n| --- | --- |\n| Type | ${tableCell(issueType)} |\n| Area | ${tableCell(functionalAreas)} |\n| Priority | ${tableCell(result.priority)}. ${tableCell(result.priorityReason)} |\n| Effort | ${tableCell(result.effort)}. ${tableCell(result.effortReason)} |\n| Details | ${tableCell(details)} |`
@@ -637,7 +645,8 @@ async function run(): Promise<void> {
   if (dryRun) {
     core.info(`[dry-run] Would add labels: ${labelsToAdd.join(', ') || '(none)'}`)
     core.info(`[dry-run] Would remove labels: ${[...new Set([...result.labelsToRemove, ...(result.status === 'unclear' ? [] : [triageLabel])])].join(', ') || '(none)'}`)
-    core.info(`[dry-run] Would change issue type: ${moveToFeature && allowTypeChanges ? 'Bug to Feature' : '(none)'}`)
+    core.info(`[dry-run] Would change issue type: ${issueTypeChanged && allowTypeChanges ? `${currentTriageIssueType} to ${result.issueType}` : '(none)'}`)
+    core.info(`[dry-run] Would change issue title: ${issueTypeChanged && allowTypeChanges && updatedTitle ? updatedTitle : '(none)'}`)
     core.info(`[dry-run] Would close: ${allowClose && closing}`)
     return
   }
@@ -645,7 +654,9 @@ async function run(): Promise<void> {
   if (allowLabelChanges) {
     for (const label of result.labelsToRemove.filter(label => label !== triageLabel)) await octokit.rest.issues.removeLabel({ owner, repo: repoName, issue_number: issueNumber, name: label })
   }
-  if (allowTypeChanges && moveToFeature) await octokit.rest.issues.update({ owner, repo: repoName, issue_number: issueNumber, type: 'Feature' })
+  if (allowTypeChanges && issueTypeChanged) {
+    await octokit.rest.issues.update({ owner, repo: repoName, issue_number: issueNumber, type: result.issueType, ...(updatedTitle ? { title: updatedTitle } : {}) })
+  }
   await octokit.rest.issues.createComment({ owner, repo: repoName, issue_number: issueNumber, body: report })
   if (allowClose && closing) {
     if (duplicateIssueNumber) {

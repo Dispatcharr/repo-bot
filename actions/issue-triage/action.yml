@@ -60,7 +60,7 @@ inputs:
     required: false
     default: 'true'
   allow-type-changes:
-    description: "Move confirmed Bug issues to the Feature issue type."
+    description: "Apply confirmed Bug and Feature issue type corrections and synchronize a leading supported title prefix."
     required: false
     default: 'true'
   allow-close:

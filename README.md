@@ -340,7 +340,7 @@ uses: Dispatcharr/repo-bot/actions/issue-triage@v1
 | `context-branch` | no | default branch | Branch used for context retrieval. |
 | `allowed-dispositions` | no | built-in list | Comma-separated dispositions permitted for model output. |
 | `allow-label-changes` | no | `true` | Apply validated label additions and removals. |
-| `allow-type-changes` | no | `true` | Move confirmed Bug issues to the Feature issue type. |
+| `allow-type-changes` | no | `true` | Apply confirmed Bug and Feature issue type corrections and synchronize a leading `[Bug]:` or `[Feature]:` title prefix. |
 | `allow-close` | no | `true` | Close issues for an allowed closing disposition. |
 | `allow-retriage` | no | `false` | Reprocess an issue when the trigger label is reapplied after this bot already triaged it. |
 | `allow-non-triage` | no | `false` | Process an open issue without the trigger label, for dry runs or manual retriage. |
@@ -360,7 +360,7 @@ uses: Dispatcharr/repo-bot/actions/issue-triage@v1
 
 After successful processing, the action removes the trigger label unless evidence is insufficient. Issues with unclear evidence retain the label for later retriage.
 
-Issue bodies, comments, related issues, and context files are untrusted evidence. They are tagged as untrusted in the prompt, cannot issue GitHub API operations, and model output must pass local schema and repository-label validation before the action mutates GitHub state. System instructions and the triggering issue with its comments are always included intact. The shared context budget applies only to supplemental repository files, while related-issue bodies are limited to the top three candidates. Every run adds an assessment summary, including its recommendation, to the workflow. Every completed triage also posts a table-only bot comment with its assessment, estimated effort, functional area, priority, and supporting details. Open issues automatically receive their selected effort, P1-P4, and matching `Area:` labels when those labels exist. `Bug` and `Feature Request` labels are not applied because GitHub issue types classify them. When evidence confirms that a Bug is a request for new behavior, the action moves it to the Feature issue type.
+Issue bodies, comments, related issues, and context files are untrusted evidence. They are tagged as untrusted in the prompt, cannot issue GitHub API operations, and model output must pass local schema and repository-label validation before the action mutates GitHub state. System instructions and the triggering issue with its comments are always included intact. The shared context budget applies only to supplemental repository files, while related-issue bodies are limited to the top three candidates. Every run adds an assessment summary, including its recommendation, to the workflow. Every completed triage also posts a table-only bot comment with its assessment, estimated effort, functional area, priority, and supporting details. Open issues automatically receive their selected effort, P1-P4, and matching `Area:` labels when those labels exist. `Bug` and `Feature Request` labels are not applied because GitHub issue types classify them. Confirmed type corrections update the GitHub issue type in either direction and synchronize a leading `[Bug]:` or `[Feature]:` title prefix when present. Feature-to-Bug corrections require corroborating direct evidence of an existing product expectation, so they are intentionally rarer.
 
 #### Usage
 
