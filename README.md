@@ -179,32 +179,51 @@ jobs:
 
 ### pr-intake
 
-Labels and acknowledges external pull requests when they are opened. On `workflow_dispatch`, it backfills only open external pull requests with no labels. Member, collaborator, and owner pull requests are skipped by default.
+Manages an external pull request through intake, review, and closure. Member-authored pull requests are skipped by default in every phase, so the action does not comment on, label, assign, or clean up maintainers' pull requests.
 
 ```
 uses: Dispatcharr/repo-bot/actions/pr-intake@v1
 ```
 
-#### Inputs
+#### INTAKE
+
+When an external PR opens, the action adds the intake label and posts the intake comment. On `workflow_dispatch`, it backfills only open external PRs with no labels.
 
 | Input | Required | Default | Description |
 |-------|----------|---------|-------------|
 | `github-token` | yes | | Bot installation token with Pull requests and Issues read/write permission |
 | `intake-label` | no | `Triage` | Label applied to eligible pull requests |
 | `intake-comment` | no | built-in message | Comment posted on eligible pull requests |
-| `bypass-for-members` | no | `true` | Skip pull requests opened by collaborators, members, and owners |
-| `dry-run` | no | `false` | Log eligible pull requests without adding labels or comments |
+
+#### REVIEW
+
+When a collaborator, organization member, or owner submits a `CHANGES_REQUESTED` review on a PR that still has the intake label, the action removes that label, adds the review label, and assigns that reviewer. The intake-label gate makes this a one-time transition, so later changes-requested reviews leave the PR unchanged.
+
+| Input | Required | Default | Description |
+|-------|----------|---------|-------------|
+| `review-label` | no | `In Review` | Label added during the triage-to-review transition |
+
+#### CLOSED
+
+When an eligible PR closes, merged or not, the action unassigns everyone and removes every current label. This includes labels added by maintainers or other automations.
+
+| Input | Required | Default | Description |
+|-------|----------|---------|-------------|
+| `bypass-for-members` | no | `true` | Skip every phase for pull requests authored by collaborators, members, and owners |
+| `dry-run` | no | `false` | Log intended lifecycle changes without modifying pull requests |
 
 #### Usage
 
 ```yaml
 on:
   pull_request_target:
-    types: [opened]
+    types: [opened, closed]
+  pull_request_review:
+    types: [submitted]
   workflow_dispatch:
     inputs:
       dry_run:
-        description: Preview eligible pull requests without adding labels or comments
+        description: Preview lifecycle changes without modifying pull requests
         required: true
         type: boolean
         default: true
@@ -223,6 +242,7 @@ jobs:
         with:
           github-token: ${{ steps.app-token.outputs.token }}
           dry-run: ${{ inputs.dry_run || 'false' }}
+          review-label: In Review
           intake-comment: |
             ## Pull request received
 
