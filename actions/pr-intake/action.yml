@@ -1,23 +1,27 @@
 name: 'PR Intake'
-description: 'Labels and acknowledges external pull requests when they are opened or backfilled'
+description: 'Manages intake, review assignment, and cleanup for external pull requests'
 inputs:
   github-token:
     description: 'Bot installation token with Pull requests and Issues read/write permission'
     required: true
   intake-label:
-    description: 'Label applied to eligible pull requests'
+    description: 'INTAKE: Label applied to eligible pull requests'
     required: false
     default: 'Triage'
   intake-comment:
-    description: 'Comment posted on eligible pull requests'
+    description: 'INTAKE: Comment posted on eligible pull requests'
     required: false
     default: ''
+  review-label:
+    description: 'REVIEW: Label added when a member requests changes on a triaged pull request'
+    required: false
+    default: 'In Review'
   bypass-for-members:
-    description: 'If true, skip PRs opened by collaborators, members, and owners'
+    description: 'If true, skip every phase for PRs authored by collaborators, members, and owners'
     required: false
     default: 'true'
   dry-run:
-    description: 'Log eligible pull requests without adding labels or comments'
+    description: 'Log intended lifecycle changes without modifying pull requests'
     required: false
     default: 'false'
 runs:
