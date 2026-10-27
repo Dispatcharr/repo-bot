@@ -179,7 +179,7 @@ jobs:
 
 ### pr-intake
 
-Manages an external pull request through intake, review, and closure. Member-authored pull requests are skipped by default in every phase, so the action does not comment on, label, assign, or clean up maintainers' pull requests.
+Manages external pull requests through scheduled intake, review, and closure scans. Member-authored pull requests are skipped by default in every phase, so the action does not comment on, label, assign, or clean up maintainers' pull requests.
 
 ```
 uses: Dispatcharr/repo-bot/actions/pr-intake@v1
@@ -187,7 +187,7 @@ uses: Dispatcharr/repo-bot/actions/pr-intake@v1
 
 #### INTAKE
 
-When an external PR opens, the action adds the intake label and posts the intake comment. On `workflow_dispatch`, it backfills only open external PRs with no labels.
+On `schedule` and `workflow_dispatch`, the action adds the intake label and posts the intake comment for each open external PR with no labels. The intake label is the lifecycle marker, so a PR that already has it is not acknowledged again.
 
 | Input | Required | Default | Description |
 |-------|----------|---------|-------------|
@@ -197,7 +197,7 @@ When an external PR opens, the action adds the intake label and posts the intake
 
 #### REVIEW
 
-When a collaborator, organization member, or owner submits a `CHANGES_REQUESTED` review on a PR that still has the intake label, the action removes that label, adds the review label, and assigns that reviewer. The intake-label gate makes this a one-time transition, so later changes-requested reviews leave the PR unchanged.
+On a lifecycle scan, the action checks triaged PRs for effective `CHANGES_REQUESTED` reviews by collaborators, organization members, and owners. It uses each reviewer's latest submitted review, then selects the most recent remaining changes request. The action removes the intake label, adds the review label, and assigns that reviewer. The intake-label gate makes this a one-time transition.
 
 | Input | Required | Default | Description |
 |-------|----------|---------|-------------|
@@ -205,21 +205,20 @@ When a collaborator, organization member, or owner submits a `CHANGES_REQUESTED`
 
 #### CLOSED
 
-When an eligible PR closes, merged or not, the action unassigns everyone and removes every current label. This includes labels added by maintainers or other automations.
+Each lifecycle scan checks recently updated closed PRs. When an eligible PR closes, merged or not, the action unassigns everyone and removes every current label. This includes labels added by maintainers or other automations.
 
 | Input | Required | Default | Description |
 |-------|----------|---------|-------------|
 | `bypass-for-members` | no | `true` | Skip every phase for pull requests authored by collaborators, members, and owners |
+| `closed-lookback-days` | no | `7` | Number of days of recently updated closed pull requests to inspect for cleanup |
 | `dry-run` | no | `false` | Log intended lifecycle changes without modifying pull requests |
 
 #### Usage
 
 ```yaml
 on:
-  pull_request_target:
-    types: [opened, closed]
-  pull_request_review:
-    types: [submitted]
+  schedule:
+    - cron: '17 */6 * * *'
   workflow_dispatch:
     inputs:
       dry_run:
@@ -243,11 +242,14 @@ jobs:
           github-token: ${{ steps.app-token.outputs.token }}
           dry-run: ${{ inputs.dry_run || 'false' }}
           review-label: In Review
+          closed-lookback-days: 7
           intake-comment: |
             ## Pull request received
 
             Thanks for contributing. Your pull request has been received and will be triaged by maintainers.
 ```
+
+Run this workflow from the consuming repository's default branch. Scheduled and manually dispatched runs can use the GitHub App token for fork PRs without running contributor-controlled workflow code. The scan cadence sets the maximum normal delay before intake or review transitions occur.
 
 ---
 
