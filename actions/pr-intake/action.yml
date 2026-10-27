@@ -13,9 +13,13 @@ inputs:
     required: false
     default: ''
   review-label:
-    description: 'REVIEW: Label added when a member requests changes on a triaged pull request'
+    description: 'REVIEW: Label added when a member has an effective changes-requested review on a triaged pull request'
     required: false
     default: 'In Review'
+  closed-lookback-days:
+    description: 'SCAN: Whole days of recently updated closed pull requests to inspect for cleanup'
+    required: false
+    default: '7'
   bypass-for-members:
     description: 'If true, skip every phase for PRs authored by collaborators, members, and owners'
     required: false

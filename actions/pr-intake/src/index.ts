@@ -14,11 +14,13 @@ type PullRequest = {
   author_association?: string
   labels: Label[]
   assignees?: User[] | null
+  updated_at?: string | null
 }
 type Review = {
   state?: string
   author_association?: string
-  user?: User
+  user?: User | null
+  submitted_at?: string | null
 }
 
 function isMemberAssociation(association?: string): boolean {
@@ -31,6 +33,14 @@ function isMemberPullRequest(pullRequest: PullRequest): boolean {
 
 function hasLabel(pullRequest: PullRequest, label: string): boolean {
   return pullRequest.labels.some(item => item.name === label)
+}
+
+function parsePositiveInteger(input: string, name: string): number {
+  const value = Number(input.trim())
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(`${name} must be a positive whole number`)
+  }
+  return value
 }
 
 async function getPullRequest(
@@ -126,6 +136,106 @@ async function processClosed(
   core.info(`CLOSED cleaned up PR #${pullRequest.number}`)
 }
 
+async function latestChangesRequestedReviewer(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  pullNumber: number,
+): Promise<string | null> {
+  const reviews = await octokit.paginate(octokit.rest.pulls.listReviews, {
+    owner,
+    repo,
+    pull_number: pullNumber,
+    per_page: 100,
+  })
+  const latestByReviewer = new Map<string, Review>()
+
+  for (const review of reviews) {
+    const reviewer = review.user?.login
+    if (!reviewer || !review.submitted_at) continue
+    const previous = latestByReviewer.get(reviewer)
+    if (!previous || new Date(review.submitted_at).getTime() > new Date(previous.submitted_at!).getTime()) {
+      latestByReviewer.set(reviewer, review)
+    }
+  }
+
+  const changesRequested = [...latestByReviewer.values()]
+    .filter(review => review.state === 'CHANGES_REQUESTED' && isMemberAssociation(review.author_association))
+    .sort((left, right) => new Date(right.submitted_at!).getTime() - new Date(left.submitted_at!).getTime())
+
+  return changesRequested[0]?.user?.login ?? null
+}
+
+async function scanLifecycle(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  intakeLabel: string,
+  intakeComment: string,
+  reviewLabel: string,
+  closedLookbackDays: number,
+  bypassForMembers: boolean,
+  dryRun: boolean,
+): Promise<void> {
+  let intakes = 0
+  let reviews = 0
+  let closed = 0
+
+  for (let page = 1; ; page += 1) {
+    const { data: pullRequests } = await octokit.rest.pulls.list({
+      owner,
+      repo,
+      state: 'open',
+      per_page: 100,
+      page,
+    })
+    for (const pullRequest of pullRequests) {
+      if (bypassForMembers && isMemberPullRequest(pullRequest)) continue
+      if (pullRequest.labels.length === 0) {
+        intakes += 1
+        await processIntake(octokit, owner, repo, pullRequest, intakeLabel, intakeComment, dryRun)
+        continue
+      }
+      if (!hasLabel(pullRequest, intakeLabel)) continue
+
+      const reviewer = await latestChangesRequestedReviewer(octokit, owner, repo, pullRequest.number)
+      if (!reviewer) continue
+      reviews += 1
+      await processReview(octokit, owner, repo, pullRequest, reviewer, intakeLabel, reviewLabel, dryRun)
+    }
+    if (pullRequests.length < 100) break
+  }
+
+  const cutoff = Date.now() - closedLookbackDays * 24 * 60 * 60 * 1000
+  let reachedCutoff = false
+  for (let page = 1; !reachedCutoff; page += 1) {
+    const { data: pullRequests } = await octokit.rest.pulls.list({
+      owner,
+      repo,
+      state: 'closed',
+      sort: 'updated',
+      direction: 'desc',
+      per_page: 100,
+      page,
+    })
+    for (const pullRequest of pullRequests) {
+      if (!pullRequest.updated_at || new Date(pullRequest.updated_at).getTime() < cutoff) {
+        reachedCutoff = true
+        break
+      }
+      if (bypassForMembers && isMemberPullRequest(pullRequest)) continue
+      if (pullRequest.labels.length === 0 && (pullRequest.assignees?.length ?? 0) === 0) continue
+      closed += 1
+      await processClosed(octokit, owner, repo, pullRequest, dryRun)
+    }
+    if (pullRequests.length < 100) break
+  }
+
+  core.notice(
+    `${dryRun ? 'Dry run found' : 'Processed'} ${intakes} intake, ${reviews} review, and ${closed} closed pull request(s).`,
+  )
+}
+
 async function run(): Promise<void> {
   const token = core.getInput('github-token', { required: true })
   const intakeLabel = core.getInput('intake-label') || 'Triage'
@@ -133,6 +243,16 @@ async function run(): Promise<void> {
   const reviewLabel = core.getInput('review-label') || 'In Review'
   const bypassForMembers = core.getBooleanInput('bypass-for-members')
   const dryRun = core.getBooleanInput('dry-run')
+  let closedLookbackDays: number
+  try {
+    closedLookbackDays = parsePositiveInteger(
+      core.getInput('closed-lookback-days') || '7',
+      'closed-lookback-days',
+    )
+  } catch (error) {
+    core.setFailed((error as Error).message)
+    return
+  }
   const { eventName, payload, repo } = github.context
   const octokit = github.getOctokit(token)
   const { owner, repo: repoName } = repo
@@ -189,29 +309,22 @@ async function run(): Promise<void> {
     return
   }
 
-  if (eventName !== 'workflow_dispatch') {
-    core.info(`Event is "${eventName}", pr-intake only runs on pull request, pull request review, or workflow dispatch events`)
+  if (eventName !== 'schedule' && eventName !== 'workflow_dispatch') {
+    core.info(`Event is "${eventName}", pr-intake only runs on pull request, pull request review, schedule, or workflow dispatch events`)
     return
   }
 
-  let eligiblePullRequests = 0
-  for (let page = 1; ; page += 1) {
-    const { data: pullRequests } = await octokit.rest.pulls.list({
-      owner,
-      repo: repoName,
-      state: 'open',
-      per_page: 100,
-      page,
-    })
-    for (const pullRequest of pullRequests) {
-      if (bypassForMembers && isMemberPullRequest(pullRequest)) continue
-      if (pullRequest.labels.length !== 0) continue
-      eligiblePullRequests += 1
-      await processIntake(octokit, owner, repoName, pullRequest, intakeLabel, intakeComment, dryRun)
-    }
-    if (pullRequests.length < 100) break
-  }
-  core.notice(`${dryRun ? 'Dry run found' : 'Processed'} ${eligiblePullRequests} eligible intake pull request(s).`)
+  await scanLifecycle(
+    octokit,
+    owner,
+    repoName,
+    intakeLabel,
+    intakeComment,
+    reviewLabel,
+    closedLookbackDays,
+    bypassForMembers,
+    dryRun,
+  )
 }
 
 run().catch(core.setFailed)
