@@ -177,6 +177,68 @@ jobs:
 
 ---
 
+### proposal-guard
+
+Requires a GitHub Discussion link for large proposals. It calculates the absolute net line delta after excluding `ignore-globs`, then enforces only when that delta exceeds the configured limit. The guard applies to unlabeled PRs and PRs with the configured triage label. It skips PRs created at or before the cutoff and, when configured, PRs authored by repository collaborators.
+
+```
+uses: Dispatcharr/repo-bot/actions/proposal-guard@v1
+```
+
+#### Inputs
+
+| Input | Required | Default | Description |
+|-------|----------|---------|-------------|
+| `github-token` | yes | | Bot installation token with Pull requests and Issues read/write permission |
+| `max-net-delta-without-discussion` | no | `600` | Maximum absolute net line delta allowed without a GitHub Discussion link |
+| `ignore-globs` | no | `''` | Comma-separated file globs excluded from net line delta calculations |
+| `triage-label` | no | `Triage` | Labeled PRs are checked only when they have this label. Unlabeled PRs are always checked. |
+| `created-after` | no | `2026-10-29T23:59:00Z` | Only check PRs created strictly after this UTC ISO 8601 timestamp |
+| `enforcement` | no | `close` | What to do when an eligible PR exceeds the limit without a Discussion link: `close`, `lock`, `close-and-lock`, `comment-only` |
+| `lock-reason` | no | `off-topic` | Lock reason when enforcement includes `lock`: `off-topic`, `too heated`, `resolved`, `spam` |
+| `comment` | no | built-in message | Comment posted on failure. Supports `{net-delta}`, `{max-net-delta}`, and `{triage-label}`. |
+| `bypass-for-members` | no | `false` | If `true`, skip enforcement when the PR author is a repository collaborator |
+
+#### Outputs
+
+| Output | Description |
+|--------|-------------|
+| `closed` | `true` when the run closed one or more PRs |
+| `closed-count` | Number of PRs closed by the run |
+
+A link must be an HTTPS GitHub Discussion URL such as `https://github.com/Dispatcharr/Dispatcharr/discussions/123`. Issue and pull request links do not satisfy the requirement. The action checks the PR body and every PR conversation comment. On `schedule` or `workflow_dispatch`, it scans every open PR.
+
+#### Usage
+
+```yaml
+on:
+  schedule:
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+
+jobs:
+  proposal-guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/create-github-app-token@v3
+        id: app-token
+        with:
+          client-id: ${{ secrets.BOT_APP_ID }}
+          private-key: ${{ secrets.BOT_PRIVATE_KEY }}
+      - uses: Dispatcharr/repo-bot/actions/proposal-guard@v1
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          max-net-delta-without-discussion: 600
+          created-after: '2026-10-29T23:59:00Z'
+          triage-label: Triage
+          enforcement: close
+          bypass-for-members: true
+```
+
+The action only reads PR metadata and writes comments, closure, or locking through the GitHub API.
+
+---
+
 ### pr-intake
 
 Manages external pull requests through scheduled intake, review, and closure scans. Member-authored pull requests are skipped by default in every phase, so the action does not comment on, label, assign, or clean up maintainers' pull requests.
