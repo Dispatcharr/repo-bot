@@ -1,0 +1,46 @@
+name: 'Proposal Guard'
+description: 'Requires a linked GitHub Discussion for large pull requests, including scheduled scans'
+inputs:
+  github-token:
+    description: 'Bot installation token with Pull requests and Issues read/write permission'
+    required: true
+  max-net-delta-without-discussion:
+    description: 'Maximum absolute net line delta allowed without a linked GitHub Discussion'
+    required: false
+    default: '600'
+  ignore-globs:
+    description: 'Comma-separated file globs excluded from net line delta calculations'
+    required: false
+    default: ''
+  triage-label:
+    description: 'Label that makes a labeled pull request eligible; unlabeled pull requests are always eligible'
+    required: false
+    default: 'Triage'
+  created-after:
+    description: 'Only enforce for pull requests created after this UTC ISO 8601 timestamp'
+    required: false
+    default: '2026-10-29T23:59:00Z'
+  enforcement:
+    description: 'Action to take when a qualifying discussion link is missing: close, lock, close-and-lock, comment-only'
+    required: false
+    default: 'close'
+  lock-reason:
+    description: 'Reason used when locking (off-topic, too heated, resolved, spam). Only applies when enforcement includes lock.'
+    required: false
+    default: 'off-topic'
+  comment:
+    description: 'Comment to post when the check fails. Supports {net-delta}, {max-net-delta}, and {triage-label}.'
+    required: false
+    default: ''
+  bypass-for-members:
+    description: 'If true, skip enforcement when the PR author is a repository collaborator'
+    required: false
+    default: 'false'
+outputs:
+  closed:
+    description: 'Whether this run closed one or more pull requests'
+  closed-count:
+    description: 'Number of pull requests closed by this run'
+runs:
+  using: 'node24'
+  main: 'dist/index.js'
