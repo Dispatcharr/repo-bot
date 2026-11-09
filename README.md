@@ -4,6 +4,8 @@ Org-internal GitHub Actions for the Dispatcharr project.
 
 ## Actions
 
+Each action writes a workflow step summary with its decisions, reasons, and recorded operations. Skips and failures are included, as are operations completed before a failure. Dry-run summaries identify simulated changes. Large summaries limit the number and length of entries and report when entries are omitted.
+
 ### template-enforcer
 
 Enforces issue templates and directs non-compliant items to the template chooser.

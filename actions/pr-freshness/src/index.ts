@@ -1,4 +1,4 @@
-import * as core from '@actions/core'
+import * as core from '../../shared/src/summary'
 import * as github from '@actions/github'
 
 const VALID_ENFORCEMENTS = ['close', 'lock', 'close-and-lock', 'comment-only'] as const
@@ -228,6 +228,7 @@ async function createComment(
     return
   }
   await octokit.rest.issues.createComment({ owner, repo, issue_number: prNumber, body })
+  core.info(`Posted freshness comment on PR #${prNumber}`)
 }
 
 async function deleteComment(
@@ -242,6 +243,7 @@ async function deleteComment(
     return
   }
   await octokit.rest.issues.deleteComment({ owner, repo, comment_id: commentId })
+  core.info(`Deleted freshness comment ${commentId}`)
 }
 
 async function run(): Promise<void> {
@@ -270,6 +272,7 @@ async function run(): Promise<void> {
     .filter(Boolean)
   const checkDrafts = core.getBooleanInput('check-drafts')
   const dryRun = core.getBooleanInput('dry-run')
+  core.setDryRun(dryRun)
 
   let daysBeforeStale: number
   let daysBeforeClose: number
@@ -308,6 +311,7 @@ async function run(): Promise<void> {
     state: 'open',
     per_page: 100,
   })
+  core.info(`Checking ${pullRequests.length} open pull request(s)`)
 
   for (const listedPr of pullRequests) {
     const prNumber = listedPr.number
@@ -442,6 +446,7 @@ async function run(): Promise<void> {
           core.info(`[dry-run] Would remove ${staleLabel} from PR #${prNumber}`)
         } else {
           await octokit.rest.issues.removeLabel({ owner, repo, issue_number: prNumber, name: staleLabel })
+          core.info(`Removed ${staleLabel} from PR #${prNumber}`)
         }
         await deleteComment(octokit, owner, repo, warning.id, dryRun)
         core.info(`Recovered PR #${prNumber}: ${authorActive ? 'author activity' : 'no eligibility reason remains'}`)
@@ -466,11 +471,17 @@ async function run(): Promise<void> {
       await createComment(octokit, owner, repo, prNumber, body, dryRun)
       if (enforcement === 'close' || enforcement === 'close-and-lock') {
         if (dryRun) core.info(`[dry-run] Would close PR #${prNumber}`)
-        else await octokit.rest.pulls.update({ owner, repo, pull_number: prNumber, state: 'closed' })
+        else {
+          await octokit.rest.pulls.update({ owner, repo, pull_number: prNumber, state: 'closed' })
+          core.info(`Closed PR #${prNumber}`)
+        }
       }
       if (enforcement === 'lock' || enforcement === 'close-and-lock') {
         if (dryRun) core.info(`[dry-run] Would lock PR #${prNumber}`)
-        else await octokit.rest.issues.lock({ owner, repo, issue_number: prNumber, lock_reason: lockReason })
+        else {
+          await octokit.rest.issues.lock({ owner, repo, issue_number: prNumber, lock_reason: lockReason })
+          core.info(`Locked PR #${prNumber}`)
+        }
       }
       core.info(`Enforced freshness policy on PR #${prNumber}: ${enforcement}`)
       continue
@@ -491,10 +502,11 @@ async function run(): Promise<void> {
       core.info(`[dry-run] Would add ${staleLabel} to PR #${prNumber}`)
     } else {
       await octokit.rest.issues.addLabels({ owner, repo, issue_number: prNumber, labels: [staleLabel] })
+      core.info(`Added ${staleLabel} to PR #${prNumber}`)
     }
     await createComment(octokit, owner, repo, prNumber, body, dryRun)
     core.info(`Warned PR #${prNumber}: ${reasons.join(', ')}`)
   }
 }
 
-run().catch(core.setFailed)
+void core.runWithSummary('PR freshness', run)

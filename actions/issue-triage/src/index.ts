@@ -1,4 +1,4 @@
-import * as core from '@actions/core'
+import * as core from '../../shared/src/summary'
 import * as github from '@actions/github'
 import { spawn } from 'node:child_process'
 import { access, mkdir, readFile } from 'node:fs/promises'
@@ -492,6 +492,10 @@ function tableCell(value: string): string {
   return value.replace(/\|/g, '\\|').replace(/\r?\n/g, '<br>')
 }
 
+function summaryCell(value: string): string {
+  return core.escapeHtml(value).replace(/\r?\n/g, '<br>')
+}
+
 function linkedIssueReferences(value: string): string {
   return value.replace(/\bissues?(?:\s+number)?\s*#?\s*(\d+)\b/gi, '#$1')
 }
@@ -521,6 +525,7 @@ async function run(): Promise<void> {
   const allowClosed = core.getBooleanInput('allow-closed')
   const bypassForMembers = core.getBooleanInput('bypass-for-members')
   const dryRun = core.getBooleanInput('dry-run')
+  core.setDryRun(dryRun)
   const maxContextBytes = parsePositiveInteger(core.getInput('max-context-bytes'), 'max-context-bytes')
   const maxContextTotalBytes = parsePositiveInteger(core.getInput('max-context-total-bytes'), 'max-context-total-bytes')
   const maxContextFiles = parsePositiveInteger(core.getInput('max-context-files'), 'max-context-files')
@@ -648,39 +653,47 @@ async function run(): Promise<void> {
   const summaryTable = result.status === 'unclear'
     ? [
         [{ data: '', header: true }, { data: '', header: true }],
-        ['Type', tableCell(issueTypeText)],
-        ['Area', tableCell(functionalAreasText)],
-        ['Details', tableCell(details)],
-        ['Recommendation', tableCell(`${result.disposition}. ${dispositionReason}`)],
+        ['Type', summaryCell(issueTypeText)],
+        ['Area', summaryCell(functionalAreasText)],
+        ['Details', summaryCell(details)],
+        ['Recommendation', summaryCell(`${result.disposition}. ${dispositionReason}`)],
       ]
     : [
         [{ data: '', header: true }, { data: '', header: true }],
-        ['Type', tableCell(issueTypeText)],
-        ['Area', tableCell(functionalAreasText)],
-        ['Priority', tableCell(`${result.priority}. ${priorityReason}`)],
-        ['Effort', tableCell(`${result.effort}. ${effortReason}`)],
-        ['Details', tableCell(details)],
-        ['Recommendation', tableCell(`${result.disposition}. ${dispositionReason}`)],
+        ['Type', summaryCell(issueTypeText)],
+        ['Area', summaryCell(functionalAreasText)],
+        ['Priority', summaryCell(`${result.priority}. ${priorityReason}`)],
+        ['Effort', summaryCell(`${result.effort}. ${effortReason}`)],
+        ['Details', summaryCell(details)],
+        ['Recommendation', summaryCell(`${result.disposition}. ${dispositionReason}`)],
       ]
   const report = `${reportTable}\n\n<!-- ${marker} -->`
-  await core.summary.addHeading(`Issue triage: #${issueNumber}`).addTable(summaryTable).addRaw(dryRun ? '\n\n*Dry run: no changes were applied.*' : '').write()
+  core.summary.addHeading(`Issue triage: #${issueNumber}`).addTable(summaryTable).addRaw(dryRun ? '\n\n*Dry run: no changes were applied.*' : '')
   if (dryRun) {
     core.info(`[dry-run] Would post comment:\n${report}`)
-    core.info(`[dry-run] Would add labels: ${labelsToAdd.join(', ') || '(none)'}`)
-    core.info(`[dry-run] Would remove labels: ${[...new Set([...result.labelsToRemove, ...(result.status === 'unclear' ? [] : [triageLabel])])].join(', ') || '(none)'}`)
+    core.info(`[dry-run] Would add labels: ${(allowLabelChanges ? labelsToAdd : []).join(', ') || '(none)'}`)
+    core.info(`[dry-run] Would remove labels: ${[...new Set([...(allowLabelChanges ? result.labelsToRemove : []), ...(result.status === 'unclear' ? [] : [triageLabel])])].join(', ') || '(none)'}`)
     core.info(`[dry-run] Would change issue type: ${issueTypeChanged && allowTypeChanges ? `${currentTriageIssueType} to ${result.issueType}` : '(none)'}`)
     core.info(`[dry-run] Would change issue title: ${issueTypeChanged && allowTypeChanges && updatedTitle ? updatedTitle : '(none)'}`)
     core.info(`[dry-run] Would close: ${allowClose && closing}`)
     return
   }
-  if (allowLabelChanges && labelsToAdd.length) await octokit.rest.issues.addLabels({ owner, repo: repoName, issue_number: issueNumber, labels: labelsToAdd })
+  if (allowLabelChanges && labelsToAdd.length) {
+    await octokit.rest.issues.addLabels({ owner, repo: repoName, issue_number: issueNumber, labels: labelsToAdd })
+    core.info(`Added labels: ${labelsToAdd.join(', ')}`)
+  }
   if (allowLabelChanges) {
-    for (const label of result.labelsToRemove.filter(label => label !== triageLabel)) await octokit.rest.issues.removeLabel({ owner, repo: repoName, issue_number: issueNumber, name: label })
+    for (const label of result.labelsToRemove.filter(label => label !== triageLabel)) {
+      await octokit.rest.issues.removeLabel({ owner, repo: repoName, issue_number: issueNumber, name: label })
+      core.info(`Removed label: ${label}`)
+    }
   }
   if (allowTypeChanges && issueTypeChanged) {
     await octokit.rest.issues.update({ owner, repo: repoName, issue_number: issueNumber, type: result.issueType, ...(updatedTitle ? { title: updatedTitle } : {}) })
+    core.info(`Changed issue type to ${result.issueType}${updatedTitle ? ' and updated the title' : ''}`)
   }
   await octokit.rest.issues.createComment({ owner, repo: repoName, issue_number: issueNumber, body: report })
+  core.info(`Posted triage comment on issue #${issueNumber}`)
   if (allowClose && closing) {
     if (duplicateIssueNumber) {
       try {
@@ -694,9 +707,13 @@ async function run(): Promise<void> {
     } else {
       await octokit.rest.issues.update({ owner, repo: repoName, issue_number: issueNumber, state: 'closed', state_reason: result.disposition === 'close-completed' ? 'completed' : 'not_planned' })
     }
+    core.info(`Closed issue #${issueNumber}`)
   }
-  if (result.status !== 'unclear') await octokit.rest.issues.removeLabel({ owner, repo: repoName, issue_number: issueNumber, name: triageLabel })
+  if (result.status !== 'unclear') {
+    await octokit.rest.issues.removeLabel({ owner, repo: repoName, issue_number: issueNumber, name: triageLabel })
+    core.info(`Removed triage label: ${triageLabel}`)
+  }
   core.info(`Applied triage to issue #${issueNumber}`)
 }
 
-run().catch(error => core.setFailed((error as Error).message))
+void core.runWithSummary('Issue triage outcome', run)

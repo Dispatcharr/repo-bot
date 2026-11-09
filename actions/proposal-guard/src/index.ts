@@ -1,4 +1,4 @@
-import * as core from '@actions/core'
+import * as core from '../../shared/src/summary'
 import * as github from '@actions/github'
 
 const VALID_ENFORCEMENTS = ['close', 'lock', 'close-and-lock', 'comment-only'] as const
@@ -70,6 +70,7 @@ async function enforce(
   comment: string,
 ): Promise<boolean> {
   await octokit.rest.issues.createComment({ owner, repo: repoName, issue_number: prNumber, body: comment })
+  core.info(`Posted enforcement comment on PR #${prNumber}`)
 
   if (enforcement === 'close' || enforcement === 'close-and-lock') {
     await octokit.rest.pulls.update({ owner, repo: repoName, pull_number: prNumber, state: 'closed' })
@@ -210,6 +211,7 @@ async function run(): Promise<void> {
   }
 
   let closedCount = 0
+  core.info(`Checking ${prNumbers.length} pull request(s)`)
   for (const prNumber of prNumbers) {
     const closed = await checkPullRequest(
       octokit,
@@ -231,4 +233,4 @@ async function run(): Promise<void> {
   core.setOutput('closed-count', closedCount)
 }
 
-run().catch(core.setFailed)
+void core.runWithSummary('Proposal guard', run)

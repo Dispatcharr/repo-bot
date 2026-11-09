@@ -1,4 +1,4 @@
-import * as core from '@actions/core'
+import * as core from '../../shared/src/summary'
 import * as github from '@actions/github'
 import { missingMarkers } from './markers'
 
@@ -82,6 +82,7 @@ async function enforce(
     issue_number: number,
     body: comment,
   })
+  core.info(`Posted enforcement comment on #${number}`)
 
   const shouldClose = enforcement === 'close' || enforcement === 'close-and-lock'
   const shouldLock = enforcement === 'lock' || enforcement === 'close-and-lock'
@@ -209,4 +210,4 @@ async function run(): Promise<void> {
   await enforce(octokit, owner, repoName, number, isPR, enforcementInput, lockReasonInput, comment)
 }
 
-run().catch(core.setFailed)
+void core.runWithSummary('Template enforcer', run)
