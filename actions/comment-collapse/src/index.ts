@@ -1,4 +1,4 @@
-import * as core from '@actions/core'
+import * as core from '../../shared/src/summary'
 import * as github from '@actions/github'
 
 const VALID_MODES = ['minimize', 'delete'] as const
@@ -36,6 +36,7 @@ async function run(): Promise<void> {
   const modeInput = (core.getInput('mode') || 'minimize') as Mode
   const reasonInput = (core.getInput('reason') || 'OUTDATED').toUpperCase() as Reason
   const filterLogin = core.getInput('filter-login')
+  core.info(`Mode: ${modeInput}; matching ${filterLogin ? `comments by ${filterLogin}` : 'bot comments'}${modeInput === 'minimize' ? `; reason: ${reasonInput}` : ''}`)
   const bypassForMembers = core.getBooleanInput('bypass-for-members')
 
   if (!VALID_MODES.includes(modeInput)) {
@@ -107,4 +108,4 @@ async function run(): Promise<void> {
   }
 }
 
-run().catch(core.setFailed)
+void core.runWithSummary('Comment collapse', run)

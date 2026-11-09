@@ -1,4 +1,4 @@
-import * as core from '@actions/core'
+import * as core from '../../shared/src/summary'
 import * as github from '@actions/github'
 
 const MEMBER_ASSOCIATIONS = new Set(['COLLABORATOR', 'MEMBER', 'OWNER'])
@@ -73,6 +73,7 @@ async function processIntake(
     issue_number: pullRequest.number,
     labels: [intakeLabel],
   })
+  core.info(`Added intake label to PR #${pullRequest.number}`)
   await octokit.rest.issues.createComment({
     owner,
     repo,
@@ -105,7 +106,9 @@ async function processReview(
   }
 
   await octokit.rest.issues.removeLabel({ owner, repo, issue_number: pullRequest.number, name: intakeLabel })
+  core.info(`Removed intake label from PR #${pullRequest.number}`)
   await octokit.rest.issues.addLabels({ owner, repo, issue_number: pullRequest.number, labels: [reviewLabel] })
+  core.info(`Added review label to PR #${pullRequest.number}`)
   await octokit.rest.issues.addAssignees({ owner, repo, issue_number: pullRequest.number, assignees: [reviewer] })
   core.info(`REVIEW transitioned PR #${pullRequest.number} to ${reviewer}`)
 }
@@ -129,9 +132,11 @@ async function processClosed(
 
   if (assignees.length > 0) {
     await octokit.rest.issues.removeAssignees({ owner, repo, issue_number: pullRequest.number, assignees })
+    core.info(`Removed assignees from PR #${pullRequest.number}`)
   }
   for (const label of labels) {
     await octokit.rest.issues.removeLabel({ owner, repo, issue_number: pullRequest.number, name: label })
+    core.info(`Removed label ${label} from PR #${pullRequest.number}`)
   }
   core.info(`CLOSED cleaned up PR #${pullRequest.number}`)
 }
@@ -190,16 +195,25 @@ async function scanLifecycle(
       page,
     })
     for (const pullRequest of pullRequests) {
-      if (bypassForMembers && isMemberPullRequest(pullRequest)) continue
+      if (bypassForMembers && isMemberPullRequest(pullRequest)) {
+        core.info(`Skipping PR #${pullRequest.number}: author is a repository member`)
+        continue
+      }
       if (pullRequest.labels.length === 0) {
         intakes += 1
         await processIntake(octokit, owner, repo, pullRequest, intakeLabel, intakeComment, dryRun)
         continue
       }
-      if (!hasLabel(pullRequest, intakeLabel)) continue
+      if (!hasLabel(pullRequest, intakeLabel)) {
+        core.info(`Skipping PR #${pullRequest.number}: already labeled and lacks the intake label`)
+        continue
+      }
 
       const reviewer = await latestChangesRequestedReviewer(octokit, owner, repo, pullRequest.number)
-      if (!reviewer) continue
+      if (!reviewer) {
+        core.info(`Skipping PR #${pullRequest.number}: no current member changes-requested review`)
+        continue
+      }
       reviews += 1
       await processReview(octokit, owner, repo, pullRequest, reviewer, intakeLabel, reviewLabel, dryRun)
     }
@@ -223,8 +237,14 @@ async function scanLifecycle(
         reachedCutoff = true
         break
       }
-      if (bypassForMembers && isMemberPullRequest(pullRequest)) continue
-      if (pullRequest.labels.length === 0 && (pullRequest.assignees?.length ?? 0) === 0) continue
+      if (bypassForMembers && isMemberPullRequest(pullRequest)) {
+        core.info(`Skipping closed PR #${pullRequest.number}: author is a repository member`)
+        continue
+      }
+      if (pullRequest.labels.length === 0 && (pullRequest.assignees?.length ?? 0) === 0) {
+        core.info(`Skipping closed PR #${pullRequest.number}: no labels or assignees to remove`)
+        continue
+      }
       closed += 1
       await processClosed(octokit, owner, repo, pullRequest, dryRun)
     }
@@ -243,6 +263,7 @@ async function run(): Promise<void> {
   const reviewLabel = core.getInput('review-label') || 'In Review'
   const bypassForMembers = core.getBooleanInput('bypass-for-members')
   const dryRun = core.getBooleanInput('dry-run')
+  core.setDryRun(dryRun)
   let closedLookbackDays: number
   try {
     closedLookbackDays = parsePositiveInteger(
@@ -327,4 +348,4 @@ async function run(): Promise<void> {
   )
 }
 
-run().catch(core.setFailed)
+void core.runWithSummary('PR intake', run)

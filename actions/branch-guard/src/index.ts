@@ -1,4 +1,4 @@
-import * as core from '@actions/core'
+import * as core from '../../shared/src/summary'
 import * as github from '@actions/github'
 
 const VALID_ENFORCEMENTS = ['close', 'lock', 'close-and-lock', 'comment-only'] as const
@@ -51,6 +51,7 @@ async function enforce(
     issue_number: prNumber,
     body: comment,
   })
+  core.info(`Posted enforcement comment on PR #${prNumber}`)
 
   const shouldClose = enforcement === 'close' || enforcement === 'close-and-lock'
   const shouldLock = enforcement === 'lock' || enforcement === 'close-and-lock'
@@ -126,4 +127,4 @@ async function run(): Promise<void> {
   await enforce(octokit, owner, repoName, prNumber, enforcementInput, lockReasonInput, comment)
 }
 
-run().catch(core.setFailed)
+void core.runWithSummary('Branch guard', run)
