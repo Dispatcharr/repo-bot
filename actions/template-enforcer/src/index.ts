@@ -1,5 +1,6 @@
 import * as core from '@actions/core'
 import * as github from '@actions/github'
+import { missingMarkers } from './markers'
 
 const VALID_EVENT_TYPES = ['issue', 'pull_request', 'any'] as const
 const VALID_ENFORCEMENTS = ['close', 'lock', 'close-and-lock', 'comment-only'] as const
@@ -31,7 +32,7 @@ async function isCollaborator(
 }
 
 function checkMarkers(body: string, markers: string[]): CheckResult {
-  const missing = markers.filter(m => !body.includes(m))
+  const missing = missingMarkers(body, markers)
   return {
     name: 'markers',
     passed: missing.length === 0,
