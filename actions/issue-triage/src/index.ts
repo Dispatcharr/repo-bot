@@ -3,6 +3,7 @@ import * as github from '@actions/github'
 import { spawn } from 'node:child_process'
 import { access, mkdir, readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
+import { excludedRelatedNumbers, isIneligibleClosedIssue, relatedIssueQueries, selectRelatedIssues, validateDuplicateTarget } from './related'
 
 const VALID_PROVIDERS = ['auto', 'copilot', 'openai'] as const
 const VALID_STATUSES = ['still-an-issue', 'fixed-released', 'fixed-unreleased', 'unclear', 'working-as-designed', 'invalid', 'duplicate', 'related'] as const
@@ -101,29 +102,6 @@ function searchTerms(title: string, body: string | null): string[] {
     .filter(word => word.length >= 4)
     .slice(0, 3)
 }
-
-const RELATED_ISSUE_STOP_WORDS = new Set([
-  'a', 'an', 'and', 'are', 'as', 'at', 'be', 'bug', 'by', 'for', 'from', 'has', 'have', 'in', 'is', 'issue', 'no', 'not', 'of', 'on', 'or', 'request', 'the', 'to', 'with',
-])
-
-function relatedIssueTerms(title: string): string[] {
-  return title
-    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
-    .split(/\s+/)
-    .filter(word => word.length >= 3 && !RELATED_ISSUE_STOP_WORDS.has(word.toLowerCase()))
-}
-
-function relatedIssueQueries(title: string, body: string | null): string[] {
-  const normalizedTitle = title.replace(/^\s*\[[^\]]+\]\s*:?\s*/, '').replace(/\s+/g, ' ').trim()
-  const titleTerms = relatedIssueTerms(normalizedTitle)
-  const bodyTerms = searchTerms('', body)
-  return [...new Set([
-    normalizedTitle && `in:title "${normalizedTitle.replace(/"/g, '').slice(0, 128)}"`,
-    titleTerms.length > 0 && `in:title ${titleTerms.slice(0, 3).join(' ')}`,
-    [...titleTerms.slice(0, 2), ...bodyTerms.slice(0, 2)].join(' '),
-  ].filter((query): query is string => Boolean(query)))]
-}
-
 
 function parseRepository(input: string, fallback: { owner: string, repo: string }): { owner: string, repo: string } {
   if (!input.trim()) return fallback
@@ -235,7 +213,7 @@ async function collectRepositoryContext(
 }
 
 async function collectRelatedIssueEvidence(octokit: Octokit, owner: string, repo: string, issues: Array<{ number: number, title: string, state: string, body?: string | null, labels: unknown }>): Promise<RelatedIssueEvidence[]> {
-  return Promise.all(issues.map(async (candidate, index) => {
+  return Promise.all(issues.map(async candidate => {
     try {
       const { data: issue } = await octokit.rest.issues.get({ owner, repo, issue_number: candidate.number })
       const comments = issue.comments
@@ -248,19 +226,15 @@ async function collectRelatedIssueEvidence(octokit: Octokit, owner: string, repo
         stateReason: issue.state_reason,
         closedAt: issue.closed_at,
         closedBy: issue.closed_by ? { login: issue.closed_by.login, type: issue.closed_by.type } : null,
-        body: index < 3 ? truncateContext(issue.body ?? candidate.body ?? '', 6_000) : undefined,
+        body: truncateContext(issue.body ?? candidate.body ?? '', 6_000),
         labels: issue.labels,
         comments: comments.map(comment => ({ author: comment.user?.login, createdAt: comment.created_at, body: truncateContext(comment.body ?? '', 2_000) })),
       }
     } catch {
       core.warning(`Related issue #${candidate.number} could not be loaded; using search metadata only`)
-      return { ...candidate, body: index < 3 ? truncateContext(candidate.body ?? '', 6_000) : undefined, comments: [] }
+      return { ...candidate, body: truncateContext(candidate.body ?? '', 6_000), comments: [] }
     }
   }))
-}
-
-function isBotClosed(issue: RelatedIssueEvidence): boolean {
-  return issue.state === 'closed' && issue.closedBy?.type === 'Bot'
 }
 
 function userPrompt(input: {
@@ -460,7 +434,8 @@ function validateResult(value: unknown, repositoryLabels: Set<string>, allowedDi
   const effort = string('effort') as TriageResult['effort']
   const priority = string('priority') as TriageResult['priority']
   const issueType = string('issueType') as TriageResult['issueType']
-  const functionalAreas = [...new Set(strings('functionalAreas').map(area => area.replace(/^Area:\s*/i, '').trim()).filter(Boolean))]
+  const suppliedAreas = strings('functionalAreas')
+  const functionalAreas = status === 'unclear' ? ['Unclear'] : [...new Set(suppliedAreas.map(area => area.replace(/^Area:\s*/i, '').trim()).filter(Boolean))]
   const disposition = string('disposition')
   if (!VALID_STATUSES.includes(status)) throw new Error(`Invalid status: ${status}`)
   if (!VALID_EFFORTS.includes(effort)) throw new Error(`Invalid effort: ${effort}`)
@@ -574,9 +549,9 @@ async function run(): Promise<void> {
     ),
     readPrompt(core.getInput('prompt-file')),
   ])
-  const relatedIssues = [...new Map(relatedIssueSearches.flatMap(search => search.data.items).map(issue => [issue.number, issue])).values()]
-    .filter(candidate => !ignoredRelatedIssueNumbers.has(candidate.number))
-    .slice(0, maxRelatedIssues)
+  const excludedNumbers = excludedRelatedNumbers(ignoredRelatedIssueNumbers, issueNumber, { owner, repo: repoName }, contextRepository)
+  const relatedIssues = selectRelatedIssues(relatedIssueSearches.map(search => search.data.items), issue.title, issue.body ?? null, maxRelatedIssues, excludedNumbers)
+  core.info(`Selected related issue candidate(s): ${relatedIssues.map(item => `#${item.number}`).join(', ') || '(none)'}`)
   if (ignoredRelatedIssueNumbers.size > 0) core.info(`Ignoring related issue candidate(s) for dry run: ${[...ignoredRelatedIssueNumbers].join(', ')}`)
   const repositoryLabels = new Set(labels.map(label => label.name))
   const repositoryLabelKeys = new Set(labels.map(label => labelKey(label.name)))
@@ -584,13 +559,12 @@ async function run(): Promise<void> {
     octokit,
     contextRepository.owner,
     contextRepository.repo,
-    relatedIssues.filter(item => contextRepository.owner !== owner || contextRepository.repo !== repoName || item.number !== issueNumber),
+    relatedIssues,
   )
-  const botClosedNumbers = new Set(relatedIssueEvidence.filter(isBotClosed).map(issue => issue.number))
-  if (botClosedNumbers.size > 0) core.info(`Ignoring bot-closed related issue candidate(s): ${[...botClosedNumbers].join(', ')}`)
-  const eligibleRelatedIssues = relatedIssues.filter(issue => !botClosedNumbers.has(issue.number))
+  const botClosedNumbers = new Set(relatedIssueEvidence.filter(isIneligibleClosedIssue).map(issue => issue.number))
+  if (botClosedNumbers.size > 0) core.info(`Ignoring bot-closed or unverifiable closed issue candidate(s): ${[...botClosedNumbers].join(', ')}`)
   const eligibleRelatedIssueEvidence = relatedIssueEvidence.filter(issue => !botClosedNumbers.has(issue.number))
-  core.info(`Phase 1/2 complete in ${((Date.now() - contextStartedAt) / 1000).toFixed(1)}s. Collected ${Object.keys(contextFiles).length} context file(s), ${relatedIssues.length} related issue candidate(s) (${eligibleRelatedIssues.length} eligible), and ${repositoryLabels.size} label(s)`)
+  core.info(`Phase 1/2 complete in ${((Date.now() - contextStartedAt) / 1000).toFixed(1)}s. Collected ${Object.keys(contextFiles).length} context file(s), ${relatedIssues.length} related issue candidate(s) (${eligibleRelatedIssueEvidence.length} eligible), and ${repositoryLabels.size} label(s)`)
   const triageStartedAt = Date.now()
   core.info('Phase 2/2: requesting the triage assessment with prompts/triage.md')
   const inferenceComments = comments.filter(comment => !markerComment(comment, marker, botLogin))
@@ -610,6 +584,7 @@ async function run(): Promise<void> {
     const inference = await requestInference(provider, core.getInput('provider-key'), core.getInput('provider-model'), core.getInput('provider-base-url'), core.getInput('copilot-cli-path'), core.getInput('copilot-cli-version'), prompt, `${assessmentPrompt}${correction}`, inferenceTimeoutSeconds, inferenceRetries)
     try {
       result = validateResult(inference, repositoryLabels, allowedDispositions, maxCommentLength, marker)
+      validateDuplicateTarget(result, new Set(eligibleRelatedIssueEvidence.map(item => item.number)), allowedDispositions.has('close-duplicate'))
       break
     } catch (error) {
       validationError = (error as Error).message
@@ -632,9 +607,6 @@ async function run(): Promise<void> {
     : [...new Set([...result.labelsToAdd.filter(label => !ISSUE_TYPE_LABELS.has(label)), ...automaticLabels])]
   if (labelsToAdd.some(label => result.labelsToRemove.includes(label))) throw new Error('Inference response cannot remove a selected priority or functional-area label')
   const duplicateIssueNumber = result.disposition === 'close-duplicate' ? result.relatedIssueNumbers[0] : undefined
-  if (result.disposition === 'close-duplicate' && (result.relatedIssueNumbers.length !== 1 || !eligibleRelatedIssues.some(item => item.number === duplicateIssueNumber))) {
-    throw new Error('close-duplicate requires exactly one supplied related canonical issue number')
-  }
   const details = linkedIssueReferences(result.details.join('\n\n'))
   const priorityReason = linkedIssueReferences(result.priorityReason)
   const effortReason = linkedIssueReferences(result.effortReason)
